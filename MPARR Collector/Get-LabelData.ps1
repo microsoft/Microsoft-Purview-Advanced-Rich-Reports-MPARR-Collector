@@ -161,7 +161,7 @@ Function Export-LabelData() {
     
         Connect-IPPSSession -CertificateThumbPrint $CertificateThumb -AppID $AppClientID -Organization $OnmicrosoftTenant
         # Run the commandlet to search through the Audit logs and get the AIP events in the specified timeframe
-        $GetLabelResults =  Get-Label | Select-Object DisplayName,Name,Guid,ParentLabelDisplayName 
+        $GetLabelResults =  Get-Label | Select-Object DisplayName,Name,Guid,ParentLabelDisplayName, Priority 
 
         # Status update
         $recordsCount = $GetLabelResults.Count
@@ -177,6 +177,8 @@ Function Export-LabelData() {
                 DisplayName              = $i.DisplayName
                 Name                     = $i.Name
                 Guid                     = $i.Guid
+				ParentLabelDisplayName	 = $i.ParentLabelDisplayName
+				Priority				 = $i.Priority
             }
             $log_analytics_array += $newitem
         }
