@@ -158,8 +158,13 @@ Function Export-LabelData() {
     #    Desc           : Extracts data from Get-Label into Log analytics workspace tables for reporting purposes
     #    Return         : None
     # ---------------------------------------------------------------
-    
-        Connect-IPPSSession -CertificateThumbPrint $CertificateThumb -AppID $AppClientID -Organization $OnmicrosoftTenant
+		<#
+		.NOTES
+		If you cannot add the "Compliance Administrator" role to the Azure AD App, for security reasons, you can comment the line 167 and uncomment the line 166, in that case
+		Someone with "Compliance Administrator" role needs to execute this script, this script is executed on-demand to refresh the label names
+		#>
+        #Connect-IPPSSession
+		Connect-IPPSSession -CertificateThumbPrint $CertificateThumb -AppID $AppClientID -Organization $OnmicrosoftTenant
         # Run the commandlet to search through the Audit logs and get the AIP events in the specified timeframe
         $GetLabelResults =  Get-Label | Select-Object DisplayName,Name,Guid,ParentLabelDisplayName, Priority 
 
