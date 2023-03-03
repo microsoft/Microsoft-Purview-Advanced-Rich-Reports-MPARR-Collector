@@ -29,6 +29,7 @@ Description : The script exports Azure AD users from Microsoft Graph and pushes 
 2022-10-12		S. Zamorano		- Added laconfig.json file for configuration and decryption function
 2022-10-18		G. Berdzik		- Fix licensing information
 2023-01-03		S. Zamorano		- Added Change to use beta API capabilities, added Id for users
+2023-03-03      Fixed problem with big data sets being sent to LA
 #>
 
 
@@ -160,9 +161,11 @@ Function Export-AzureADData() {
     # ---------------------------------------------------------------
     
         Connect-MgGraph -CertificateThumbPrint $CertificateThumb -AppID $AppClientID -TenantId $TenantGUID
+        #Connect-MgGraph -Scopes 'User.Read.All', 'AuditLog.Read.All'  # for testing purposes only
 		Select-MgProfile -Name "beta"
         # Run the commandlet to search through the Audit logs and get the AIP events in the specified timeframe
-		$GetAzureADInfo = Get-MgUser -Filter "assignedLicenses/`$count ne 0 and userType eq 'Member'" -ConsistencyLevel eventual -CountVariable Records -All -Property signInActivity
+		#$GetAzureADInfo = Get-MgUser -Filter "assignedLicenses/`$count ne 0 and userType eq 'Member'" -ConsistencyLevel eventual -CountVariable Records -All -Property signInActivity
+		$GetAzureADInfo = Get-MgUser -Filter "assignedLicenses/`$count ne 0 and userType eq 'Member'" -ConsistencyLevel eventual -CountVariable Records -All -Property signInActivity -PageSize 500
 		$Max = $GetAzureADInfo.Count
 
         # Status update
@@ -170,13 +173,16 @@ Function Export-AzureADData() {
         Write-Information -MessageData "   $recordsCount rows returned by Get-MgUser" -InformationAction Continue
 
         # If there is no data, skip
-        if ($GetAzureADInfo.Count -eq 0) { continue; }
+        if ($GetAzureADInfo.Count -eq 0) { continue }
 
         # Else format for Log Analytics
 		$P = 0
-        $log_analytics_array = @()            
+        #$log_analytics_array = @()
+        $usersAL = New-Object System.Collections.ArrayList     
+        $bufferSize = 10MB #15000 
+        $size = 0        
         foreach($i in $GetAzureADInfo) {
-			$UnusedAccountWarning = "OK"; $P++
+			$P++
 			Write-Host ("Processing account {0} {1}/{2}" -f $i.UserPrincipalName, $P, $Max)
             $newitem = [PSCustomObject]@{    
                 UserPrincipalName		= $i.UserPrincipalName
@@ -193,10 +199,21 @@ Function Export-AzureADData() {
 				LastAccess				= $i.SignInActivity.LastSignInDateTime
 				UserID					= $i.Id
             }
-            $log_analytics_array += $newitem
+            #$log_analytics_array += $newitem
+            [void]$usersAL.Add($newitem)
+            $size += [System.Text.Encoding]::UTF8.GetByteCount(($newitem | ConvertTo-Json -Depth 100))
+            if ($size -gt $bufferSize)
+            {
+                $log_analytics_array = $usersAL.ToArray()
+                Post-LogAnalyticsData -LogAnalyticsTableName $TableName -body $log_analytics_array
+                $log_analytics_array = $null
+                $usersAL.Clear()
+                $size = 0
+            }
         }
 
         # Push data to Log Analytics
+        $log_analytics_array = $usersAL.ToArray()
         Post-LogAnalyticsData -LogAnalyticsTableName $TableName -body $log_analytics_array
     }
     
