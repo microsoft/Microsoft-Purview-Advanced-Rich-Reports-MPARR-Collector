@@ -24,12 +24,13 @@ SOFTWARE.
 HISTORY
 Script      : Get-AzureADData.ps1
 Author      : S. Zamorano
-Version     : 1.0.0
+Version     : 1.1.0
 Description : The script exports Azure AD users from Microsoft Graph and pushes into a customer-specified Log Analytics table. Please note if you change the name of the table - you need to update Workbook sample that displays the report , appropriately. Do ensure the older table is deleted before creating the new table - it will create duplicates and Log analytics workspace doesn't support upserts or updates.
 2022-10-12		S. Zamorano		- Added laconfig.json file for configuration and decryption function
 2022-10-18		G. Berdzik		- Fix licensing information
 2023-01-03		S. Zamorano		- Added Change to use beta API capabilities, added Id for users
-2023-03-03      Fixed problem with big data sets being sent to LA
+2023-03-31      G. Berdzik      - Support for large tenants
+2023-03-31		S. Zamorano		- Visual improvement for progress
 #>
 
 
@@ -148,7 +149,7 @@ Function Post-LogAnalyticsData($body, $LogAnalyticsTableName) {
 
     if ($Response.StatusCode -eq 200) {   
         $rows = $body.Count
-        Write-Information -MessageData "   $rows rows written to Log Analytics workspace $uri" -InformationAction Continue
+        #Write-Information -MessageData "   $rows rows written to Log Analytics workspace $uri" -InformationAction Continue
     }
 
 }
@@ -160,46 +161,57 @@ Function Export-AzureADData() {
     #    Return         : None
     # ---------------------------------------------------------------
     
-        Connect-MgGraph -CertificateThumbPrint $CertificateThumb -AppID $AppClientID -TenantId $TenantGUID
-        #Connect-MgGraph -Scopes 'User.Read.All', 'AuditLog.Read.All'  # for testing purposes only
-		Select-MgProfile -Name "beta"
-        # Run the commandlet to search through the Audit logs and get the AIP events in the specified timeframe
-		#$GetAzureADInfo = Get-MgUser -Filter "assignedLicenses/`$count ne 0 and userType eq 'Member'" -ConsistencyLevel eventual -CountVariable Records -All -Property signInActivity
-		$GetAzureADInfo = Get-MgUser -Filter "assignedLicenses/`$count ne 0 and userType eq 'Member'" -ConsistencyLevel eventual -CountVariable Records -All -Property signInActivity -PageSize 500
-		$Max = $GetAzureADInfo.Count
+    Connect-MgGraph -CertificateThumbPrint $CertificateThumb -AppID $AppClientID -TenantId $TenantGUID
+    #Connect-MgGraph -Scopes 'User.Read.All', 'AuditLog.Read.All'  # for testing purposes only
+    Select-MgProfile -Name "beta"
 
-        # Status update
-        $recordsCount = $GetAzureADInfo.Count
-        Write-Information -MessageData "   $recordsCount rows returned by Get-MgUser" -InformationAction Continue
+    Write-Host "Fetching data from Azure AD..."
+    $body = @{
+        select='userPrincipalName,displayName,signInActivity,assignedLicenses,assignedPlans,city,createdDateTime,department,jobTitle,mail,officeLocation'
+        filter="assignedLicenses/count ne 0 and userType eq 'Member'"
+        count="true"
+    }
+    $headers = @{
+        ConsistencyLevel="eventual"
+    }
 
-        # If there is no data, skip
-        if ($GetAzureADInfo.Count -eq 0) { continue }
 
-        # Else format for Log Analytics
-		$P = 0
-        #$log_analytics_array = @()
-        $usersAL = New-Object System.Collections.ArrayList     
-        $bufferSize = 10MB #15000 
-        $size = 0        
-        foreach($i in $GetAzureADInfo) {
-			$P++
-			Write-Host ("Processing account {0} {1}/{2}" -f $i.UserPrincipalName, $P, $Max)
+    $usersAL = New-Object System.Collections.ArrayList     
+    $bufferSize = 10MB
+    $size = 0        
+    $page = 1
+	$stop = $false
+	$Progress = 0
+	$perc = 0
+
+    $response = Invoke-MgGraphRequest -Method Get -Uri "https://graph.microsoft.com/v1.0/users" -Body $body -Headers $headers
+	$TotalRows = $response["@odata.count"]
+    Write-Host "Total number of records found: $($response["@odata.count"])." 
+    do
+    {
+		$Progress += 90
+		$perc = ($Progress*100)/$TotalRows
+		Write-Progress -Activity "Data received. Processing page no. [$page]" -PercentComplete $perc
+		$page++
+
+        foreach($user in $response.value) 
+        {
             $newitem = [PSCustomObject]@{    
-                UserPrincipalName		= $i.UserPrincipalName
-				DisplayName             = $i.DisplayName
-                City                    = $i.City
-				Country                 = $i.Country
-                Department              = $i.Department
-				JobTitle                = $i.JobTitle
-				Mail                    = $i.Mail
-				OfficeLocation          = $i.OfficeLocation
-				AssignedLicenses		= $i.AssignedLicenses
-				AssignedPlans			= $i.AssignedPlans
-				CreateDateTime			= $i.CreateDateTime
-				LastAccess				= $i.SignInActivity.LastSignInDateTime
-				UserID					= $i.Id
+                UserPrincipalName		= $user.UserPrincipalName
+                DisplayName             = $user.DisplayName
+                City                    = $user.City
+                Country                 = $user.Country
+                Department              = $user.Department
+                JobTitle                = $user.JobTitle
+                Mail                    = $user.Mail
+                OfficeLocation          = $user.OfficeLocation
+                AssignedLicenses		= $user.AssignedLicenses
+                AssignedPlans			= $user.AssignedPlans
+                CreateDateTime			= $user.CreateDateTime
+                LastAccess				= $user.SignInActivity.LastSignInDateTime
+                UserID					= $user.Id
             }
-            #$log_analytics_array += $newitem
+
             [void]$usersAL.Add($newitem)
             $size += [System.Text.Encoding]::UTF8.GetByteCount(($newitem | ConvertTo-Json -Depth 100))
             if ($size -gt $bufferSize)
@@ -211,12 +223,25 @@ Function Export-AzureADData() {
                 $size = 0
             }
         }
+        if ($response["@odata.nextLink"] -ne $null)
+        {
+            $response = Invoke-MgGraphRequest -Method Get -Uri $response["@odata.nextLink"] #-Body $body -Headers $headers
+        }
+        else 
+        {
+            $stop = $true
+			Write-Host "   Work completed!!! $TotalRows elements imported to Logs Analytics" -ForegroundColor Green
+        } 
 
-        # Push data to Log Analytics
+    } while (-not $stop)
+
+    # Push remaining data to Log Analytics
+    if ($usersAL.Count -gt 0)
+    {
         $log_analytics_array = $usersAL.ToArray()
-        Post-LogAnalyticsData -LogAnalyticsTableName $TableName -body $log_analytics_array
+		Post-LogAnalyticsData -LogAnalyticsTableName $TableName -body $log_analytics_array			
     }
-    
- 
+}
+     
 #Main Code - Run as required. Do ensure older table is deleted before creating the new table - as it will create duplicates.
 Export-AzureADData 
