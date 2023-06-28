@@ -24,7 +24,7 @@ SOFTWARE.
 HISTORY
 Script      : Get-RMSData.ps1
 Author      : S. Zamorano
-Version     : 1.2.0
+Version     : 1.2.1
 Description : The script exports Aipservice Log Data from Microsoft AADRM API and pushes into a customer-specified Log Analytics table. Please note if you change the name of the table - you need to update Workbook sample that displays the report , appropriately. Do ensure the older table is deleted before creating the new table - it will create duplicates and Log analytics workspace doesn't support upserts or updates.
 2022-10-19		S. Zamorano		- Added laconfig.json file for configuration and decryption function
 2022-11-18      G.Berdzik       - Fixed issue with data parsing
@@ -32,6 +32,7 @@ Description : The script exports Aipservice Log Data from Microsoft AADRM API an
 2022-12-28      S. Zamorano     
 2023-01-02      G.Berdzik       - Minor change (check for output directory)
 2023-01-25      G.Berdzik       - Added code for Get-AipServiceTrackingLog data
+2023-01-26      G.Berdzik       - Added support for multithreading
 #>
 
 [CmdletBinding()]
@@ -161,23 +162,60 @@ function GetAipServiceTrackingLogData($source, $array)
     # ---------------------------------------------------------------   
     #    Name           : GetAipServiceTrackingLogData
     #    Desc           : Gets data from Get-AipServiceTrackingLog
-    #    Return         : object from cmdlet
     # ---------------------------------------------------------------
 
     Write-Host "Processing Get-AipServiceTrackingLog..." -ForegroundColor Cyan
+    $inputRows = $source | Where-Object {$_."content-id" -ne "-"}
     $count = $array.Count
-    foreach ($item in $source)
+
+    #region threads
+    $runspacePool= [runspacefactory]::CreateRunspacePool(1, $threads)
+    $runspacePool.Open()
+    $jobs= New-Object System.Collections.ArrayList
+    # worker script (just executing AIP cmdlet)
+    $worker = {
+        param($item)
+
+        $id = $item."content-id" -replace "[{}]", ""
+        Get-AipServiceTrackingLog -ContentId $id
+    }
+
+    foreach ($item in $inputRows)
     {
-        if ($item."content-id" -ne "-")
+        $powerShell= [powershell]::Create()
+        $powerShell.RunspacePool = $runspacePool
+        $powerShell.AddScript($worker).AddArgument($item) | Out-Null
+        $jobObj = New-Object -TypeName PSObject -Property @{
+            Runspace = $powerShell.BeginInvoke()
+            PowerShell = $powerShell
+        }
+        [void]$jobs.Add($jobObj)
+    }
+
+    # wait for jobs to complete
+    while ($jobs.Runspace.IsCompleted -contains $false)
+    {
+        Start-Sleep -Milliseconds 10
+    }
+    # receive results
+    $results = $jobs | ForEach-Object {
+        $_.PowerShell.EndInvoke($_.Runspace)
+        $_.PowerShell.Dispose()
+    }
+    $jobs.Clear()
+    [void]$runspacePool.Close()
+    [void]$runspacePool.Dispose()
+    [GC]::Collect()
+    #endregion
+
+    # copy results to the destination array
+    foreach ($item in $results)
+    {
+        if ($item -ne $null)
         {
-            $id = $item."content-id" -replace "[{}]", ""
-            $details = Get-AipServiceTrackingLog -ContentId $id
-            if ($details -ne $null)
+            foreach ($element in $item)
             {
-                foreach ($element in $details)
-                {
-                    [void]$array.Add($element)
-                }
+                [void]$array.Add($element)
             }
         }
     }
@@ -208,9 +246,11 @@ function Export-RMSusersLogs {
             $startTime = (Get-Date).ToString("yyyy-MM-dd") 
         }
 
-        $threads = (Get-WmiObject win32_computersystem).NumberOfLogicalProcessors * 2
+        # Calculate number of threads
+        $threads = (Get-WmiObject win32_computersystem).NumberOfLogicalProcessors * 4
         $ea = $ErrorActionPreference
         $ErrorActionPreference = "SilentlyContinue"
+        Write-Host "Fetching logs..."
 		$response = Get-AipServiceUserLog -FromDate $startTime -NumberOfThreads $threads -Path $RMSLogs -force -ErrorVariable MyError
         $ErrorActionPreference = $ea
         if ($MyError.Count -gt 0)
