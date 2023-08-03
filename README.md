@@ -4,19 +4,19 @@ Welcome to Microsoft Purview Advanced Rich Reports (MPARR) Collector.
 
 Today have the right information in the right moment can be a great business value, we are talking about implement security and compliance, one of the most importance things are understanding that this accomplishment is a business goal, in that order of ideas, to have reports, business-friendly, to see how our end users are using and adopting these tools is a global benefit. In that order of ideas, this solution take the information available under the Microsoft 365 services and give the capabilities to present this information to different business units, given the capacity to c-level users have access to business metrics related to compliance.
 
-![MPARR - Achitecture Overview](https://user-images.githubusercontent.com/44684110/215555123-019ddb3f-a25d-4b88-bb59-7e204d5e1c6c.png)
+![MPARR - Solution Achitecture](https://github.com/microsoft/Microsft-Purview-Advanced-Rich-Reports-MPARR-Collector/assets/44684110/eac7f766-4ffb-4777-8696-4c73cefb6054)
 <p align="center">Current Architecture for MPARR</p>
 
 Today one of the principal challenges in all organizations is stay align with the Compliance principles, each organization define their own priorities, and policies definitions. But, in all the cases they need to involve the complete organization, and to involve we need to show the right information at the right time.
 Office 365 Management API collect all the information available through Unified Auditing tool, this helps to Security, Compliance and IT areas looking for some specific information and generate some reports but is not possible easily to show that information to different business units, and they don’t have the time neither to prepare more detailed reports.
 
-![MPARR - Dependency Model](https://user-images.githubusercontent.com/44684110/215555376-4daa3589-dfc6-4ce9-b7ed-014201861827.png)
+![MPARR - Achitecture dependencies adn Tables](https://github.com/microsoft/Microsft-Purview-Advanced-Rich-Reports-MPARR-Collector/assets/44684110/928c8b6d-7bcf-4e21-8d65-94e64a41927c)
 <p align="center">Variables needed to set in laconfig.json files and the TableNames created on Logs Analytics</p>
  
 In that order of ideas, the solution presented next permit to have a robust solution to collect all the data and prepare reports with specific scopes to specific audiences, without require special permissions or additional knowledge to understand the security tools.
 This solution collects all the information available through Office 365 Management API and store this information on Logs Analytics workspace, this one can be the same used for Sentinel (we will discuss more this point next), from this workspace the information can be consumed using Power BI desktop to create advanced rich reports to publish then with Power BI online workspaces, this step permit to generate different workspaces for different audiences. To give more added value to these reports, some additional scrips are delivered, to collect as example the data related to Azure AD attributes, this one permit to create reports based on location, country, business units and any other Azure AD attribute available.
 
-![MPARR - Information  collected](https://user-images.githubusercontent.com/44684110/215555738-c7db620a-5a3d-4c1d-92aa-43b5b66c5148.png)
+![MPARR - Tables created and description](https://github.com/microsoft/Microsft-Purview-Advanced-Rich-Reports-MPARR-Collector/assets/44684110/c5798290-be87-4ed9-9722-63fe7ed4d390)
 <p align="center">TableNames created on Logs Analytics and use</p>
  
 As we said previously, because this information can be stored on the same workspace used for Sentinel, this information can be utilized to generate workbooks with more detailed information for Security monitoring.
