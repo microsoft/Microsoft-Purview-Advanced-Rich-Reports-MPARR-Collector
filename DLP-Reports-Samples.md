@@ -1,4 +1,4 @@
-Here some samples about DLP Reports, those reports will be available soon as Power BI Templates available here in this HitHub site.
+Here some samples about DLP Reports, those reports will be available soon as Power BI Templates available here in this GitHub site.
 
 ![MPARR - DLP overview](https://github.com/microsoft/Microsft-Purview-Advanced-Rich-Reports-MPARR-Collector/assets/44684110/624cca46-27e0-4d3b-a121-80545426f599)
 <p align="center">MPARR - DLP Overview with filter based on Business Units</p>
