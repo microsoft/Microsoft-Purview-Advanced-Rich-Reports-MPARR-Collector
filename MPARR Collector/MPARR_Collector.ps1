@@ -64,8 +64,7 @@
 .EXAMPLE
     mparr_collector.ps1 -FilterAuditSharepoint "Accessed"
 
-    Exports compliance data to LA with filtering enabled for Sharepoint data. Please note that list of the filters depends on the 'schema.json' content, and in the same file
-	can be set "Contains" or "NotContains"
+    Exports compliance data to LA with filtering enabled for Sharepoint data. Please note that list of the filters depends on the 'schema.json' content.
 
 .EXAMPLE
     "your_secret" | ConvertTo-SecureString -AsPlainText -Force | ConvertFrom-SecureString
@@ -76,8 +75,8 @@
     Value of "EncryptedKeys" must be set to "True".
 
 .NOTES
-    Version 5.00
-    Current version - 12.03.2023
+    Version 4.12
+    Current version - 21.09.2023
 
      Original Version:        2.7
               Author:         Walid Elmorsy - Principal Program Manager - Compliance CAT team.
@@ -97,9 +96,9 @@ HISTORY
   2022-09-27    G.Berdzik   - Change to Version 3. Added support for direct export to LA (no files required).
   2022-11-04    G.Berdzik   - Added 'EventCreationTime_t' column storing original 'CreationTime' value. Batch size changed to 500 elements from 100.
   2022-11-14    G.Berdzik   - Change to Version 4. Added support for 'schemas.json', cloud type (designed by S.Zamorano)
-  2023-02-08    G.Berdzik   - File name change, change in filtering based on 'schemas.json'
-  2023-03-10    G.Berdzik   - Added support for 'OutputLogs' setting in 'laconfig.json'. 
-  2023-03-12	S.Zamorano	- Minimal changes
+  2023-02-08    G.Berdzik	- File name change, change in filtering based on 'schemas.json'
+  2023-03-10    G.Berdzik	- Added support for 'OutputLogs' setting in 'laconfig.json'.
+  2023-09-21    G.Berdzik	- Fixes related to timeout connection on the first execution
 #>
 
 #------------------------------------------------------------------------------  
@@ -144,6 +143,8 @@ param(
     [Parameter()] 
         [switch]$ExportWithFile
 
+#    [Parameter()]
+#        [string]$OutputPath = "C:\APILogs\"
 )
 
 DynamicParam 
@@ -286,7 +287,15 @@ function FetchData($TotalContentPages, $Officetoken, $Subscription)
 
             Write-Verbose " uri:$uri"
 
-            try{
+            try {
+
+                # check for token expiration
+                if ($tokenExpiresOn.AddMinutes(5) -lt (Get-Date))
+                {
+                    Write-Host "Refreshing access token..."
+                    GetAuthToken
+                }
+
                 $result = Invoke-RestMethod -Uri $uri -Headers $Officetoken -Method Get
                 if ($script:PSBoundParameters.ContainsKey($filterName))
                 {
@@ -367,17 +376,15 @@ function GetFileName($Date, $Subscription, $OutputPath)
     return $OutputPath + $JSONfilename
 }
 
-
-function Export-Logs
+# get access token
+function GetAuthToken
 {
-    Write-Verbose " enter export-logs" 
-
-    # Access token Request and Retrieval 
     $body = @{grant_type="client_credentials";resource=$APIResource;client_id=$AppClientID;client_secret=$ClientSecretValue}
     Write-Host -ForegroundColor Blue -BackgroundColor white "Obtaining authentication token..." -NoNewline
     try{
         $oauth = Invoke-RestMethod -Method Post -Uri "$loginURL/$TenantDomain/oauth2/token?api-version=1.0" -Body $body -ErrorAction Stop
-        $OfficeToken = @{'Authorization'="$($oauth.token_type) $($oauth.access_token)"}
+        $script:tokenExpiresOn = ([DateTime]('1970,1,1')).AddSeconds($oauth.expires_on).ToLocalTime()
+        $script:OfficeToken = @{'Authorization'="$($oauth.token_type) $($oauth.access_token)"}
         Write-Host -ForegroundColor Green "Authentication token obtained"
     } catch {
         write-host -ForegroundColor Red "FAILED"
@@ -385,8 +392,16 @@ function Export-Logs
         Write-host -ForegroundColor Red $error[0]
         exit
     }
+}
 
 
+function Export-Logs
+{
+    Write-Verbose " enter export-logs" 
+
+    # Access token Request and Retrieval 
+    GetAuthToken
+    
     #create new Subscription (if needed)
 
     Write-Host -ForegroundColor Blue -BackgroundColor white "Creating Subscriptions...."
@@ -425,6 +440,14 @@ function Export-Logs
         Write-Host -ForegroundColor Cyan "`n-> Collecting log data from '" -NoNewline
         Write-Host -ForegroundColor White -BackgroundColor DarkGray $Subscription -NoNewline
         Write-Host -ForegroundColor Cyan "': " -NoNewline
+
+        # check for token expiration
+        if ($tokenExpiresOn.AddMinutes(5) -lt (Get-Date))
+        {
+            Write-Host "Refreshing access token..."
+            GetAuthToken
+        }
+
         $logs = buildLog $BaseURI $Subscription $TenantGUID $OfficeToken
 
         $JSONfileName = getFileName $Date $Subscription $outputPath
