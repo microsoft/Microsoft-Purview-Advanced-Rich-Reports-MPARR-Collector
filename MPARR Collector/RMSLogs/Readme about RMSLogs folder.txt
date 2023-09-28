@@ -1,0 +1,1 @@
+The Azure RMS API used by MPARR-RMSData.ps1 script is old and need some local process for the data collected and send only new data to Logs Analytics, that information is processed in this folder.
