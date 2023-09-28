@@ -4,7 +4,7 @@ Welcome to Microsoft Purview Advanced Rich Reports (MPARR) Collector.
 
 Today have the right information in the right moment can be a great business value, we are talking about implement security and compliance, one of the most importance things are understanding that this accomplishment is a business goal, in that order of ideas, to have reports, business-friendly, to see how our end users are using and adopting these tools is a global benefit. In that order of ideas, this solution take the information available under the Microsoft 365 services and give the capabilities to present this information to different business units, given the capacity to c-level users have access to business metrics related to compliance.
 
-![MPARR - Solution Achitecture](https://github.com/microsoft/Microsoft-Purview-Advanced-Rich-Reports-MPARR-Collector/assets/44684110/1f45ca47-c6e9-4146-aba9-bb47e350a2a4)
+![MPARR - Solution Achitecture](https://github.com/microsoft/Microsoft-Purview-Advanced-Rich-Reports-MPARR-Collector/assets/44684110/8b324ae4-27bf-4e38-9aaf-cc19cfee27a3)
 <p align="center">Current Architecture for MPARR</p>
 
 Today one of the principal challenges in all organizations is stay align with the Compliance principles, each organization define their own priorities, and policies definitions. But, in all the cases they need to involve the complete organization, and to involve we need to show the right information at the right time.
