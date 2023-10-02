@@ -26,8 +26,9 @@ HISTORY
   2023-09-21    G.Berdzik 	- Fixes
   2023-09-22    G.Berdzik 	- Fixes
   2023-09-26    G.Berdzik 	- Fixes
-  2023-09-27	s.Zamorano	- QA and some comments
+  2023-09-27	S.Zamorano	- QA and some comments
   2023-09-28    G.Berdzik   - Fixes
+  2023-10-02	S.Zamorano	- Fix some descriptions
 #>
 
 #------------------------------------------------------------------------------  
@@ -415,9 +416,9 @@ function NewApp
     }
     
     # ask for client secret name
-    $keyName = "Secret1"
+    $keyName = "MPARR Collector App Secret key"
     $choices  = '&Proceed', '&Change'
-    $decision = $Host.UI.PromptForChoice("", "Default client secret name is '$keyName'. Do you want to proceed or change the name?", $choices, 0)
+    $decision = $Host.UI.PromptForChoice("", "Default client description for secret key is '$keyName'. Do you want to proceed or change the name?", $choices, 0)
     if ($decision -eq 1)
     {
         $ok = $false
