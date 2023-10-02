@@ -31,6 +31,7 @@ Description : The script exports Azure AD users from Microsoft Graph and pushes 
 2023-01-03		S. Zamorano		- Added Change to use beta API capabilities, added Id for users
 2023-03-31      G. Berdzik      - Support for large tenants
 2023-03-31		S. Zamorano		- Visual improvement for progress
+2023-02-10		S. Zamorano		- Fix Progress bar
 #>
 
 
@@ -154,6 +155,19 @@ Function Post-LogAnalyticsData($body, $LogAnalyticsTableName) {
 
 }
 
+Function ProgressBar($TotalRows) {
+	$ProgressValue = 1
+	If ($TotalRows -le 100) {
+		$ProgressValue = 4
+	}
+	If (($TotalRows -gt 100) -AND ($TotalRows -lt 1000)){
+		$ProgressValue = 20
+	}
+	If ($TotalRows -ge 1000) {
+		$ProgressValue = $TotalRows/100
+	}
+}
+
 Function Export-AzureADData() {
     # ---------------------------------------------------------------   
     #    Name           : Export-AzureADData
@@ -187,10 +201,11 @@ Function Export-AzureADData() {
     $response = Invoke-MgGraphRequest -Method Get -Uri "https://graph.microsoft.com/v1.0/users" -Body $body -Headers $headers
 	$TotalRows = $response["@odata.count"]
     Write-Host "Total number of records found: $($response["@odata.count"])." 
+	ProgressBar
     do
     {
-		$Progress += 90
-		$perc = ($Progress*100)/$TotalRows
+		$Progress += $ProgressValue
+		$perc = $Progress/$TotalRows
 		Write-Progress -Activity "Data received. Processing page no. [$page]" -PercentComplete $perc
 		$page++
 
