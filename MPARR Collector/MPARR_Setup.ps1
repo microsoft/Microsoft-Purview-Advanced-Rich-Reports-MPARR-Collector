@@ -538,7 +538,7 @@ function CreateScheduledTask
 	MPARR-RMSData use PowerShell 5 due to API restrictions 
 	#>
 	Write-Host "`n`n----------------------------------------------------------------------------------------" -ForegroundColor Yellow
-	Write-Host "`n Please be aware that the scripts MPARR_Collectoris set to execute every 15 minutes" -ForegroundColor DarkYellow
+	Write-Host "`n Please be aware that the scripts MPARR_Collector is set to execute every 15 minutes" -ForegroundColor DarkYellow
 	Write-Host "` SMPARR-RMSData run every 15 minutes as well." -ForegroundColor DarkYellow
 	Write-Host "` You can change directly on task scheduler and change the execution period" -ForegroundColor DarkYellow
 	Write-Host "` Depend on your logs volume cannot be recommend use less time," -ForegroundColor DarkYellow
