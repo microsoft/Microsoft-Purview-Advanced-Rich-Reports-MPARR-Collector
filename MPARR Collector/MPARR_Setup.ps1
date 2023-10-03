@@ -14,11 +14,12 @@
     [5] - Create scheduled task for domains information
     [6] - Create scheduled task for administrator roles information
     [7] - Create scheduled task for Purview Sensitivity Labels and SITs information
+	[8] - Sign MPARR scripts
     [0] - Exit 
     
 .NOTES
-    Version 0.36
-    Current version - 28.09.2023
+    Version 0.9
+    Current version - 03.10.2023.02
 #> 
 
 <#
