@@ -10,6 +10,10 @@
     [1] - Full setup (select Subscription, Log Analytics workspace, create Azure app registration, specify required parameters)
     [2] - Encrypt secrets
 	[3] - Create scheduled task
+	[4] - Create scheduled task for users information
+    [5] - Create scheduled task for domains information
+    [6] - Create scheduled task for administrator roles information
+    [7] - Create scheduled task for Purview Sensitivity Labels and SITs information
     [0] - Exit 
     
 .NOTES
@@ -29,6 +33,7 @@ HISTORY
   2023-09-27	S.Zamorano	- QA and some comments
   2023-09-28    G.Berdzik   - Fixes
   2023-10-02	S.Zamorano	- Fix some descriptions
+  2023-10-03	S.Zamorano	- Added new tasks on task scheduler creation for supporting scripts (Users, Domains, Roles, Labels, SITs)
 #>
 
 #------------------------------------------------------------------------------  
@@ -525,6 +530,21 @@ function CreateScheduledTask
 {
     # main data collector script
     $taskName = "MPARR-DataCollector"
+	
+	<#
+	.NOTES
+	This function create both task,MPARR_Collector and MPARR-RMSData, to run every 15 minutes, that time can be changed on the same task scheduler, is not recommended less time.
+	MPARR_Collector use PowerShell 7
+	MPARR-RMSData use PowerShell 5 due to API restrictions 
+	#>
+	Write-Host "`n`n----------------------------------------------------------------------------------------" -ForegroundColor Yellow
+	Write-Host "`n Please be aware that the scripts MPARR_Collectoris set to execute every 15 minutes" -ForegroundColor DarkYellow
+	Write-Host "` SMPARR-RMSData run every 15 minutes as well." -ForegroundColor DarkYellow
+	Write-Host "` You can change directly on task scheduler and change the execution period" -ForegroundColor DarkYellow
+	Write-Host "` Depend on your logs volume cannot be recommend use less time," -ForegroundColor DarkYellow
+	Write-Host "` to give time to the scripts to be execute correctly." -ForegroundColor DarkYellow
+	Write-Host "`n----------------------------------------------------------------------------------------" -ForegroundColor Yellow
+	Write-Host "`n`n"
 
     # calculate date
     $dt = Get-Date
@@ -564,6 +584,196 @@ function CreateScheduledTask
     $trigger = New-ScheduledTaskTrigger -Once -At $startTime -RepetitionInterval (New-TimeSpan -Minutes $nearestMinutes)
     #$filePath = Join-Path $PSScriptRoot "MPARR-RMSData.ps1"
     $action = New-ScheduledTaskAction -Execute '"C:\Windows\system32\WindowsPowerShell\v1.0\powershell.exe"' -Argument ".\MPARR-RMSData.ps1" -WorkingDirectory $PSScriptRoot
+    Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings `
+        -RunLevel Highest -ErrorAction Stop | Out-Null
+    Write-Host "`nScheduled task named '$taskName' was created.`nFor security reasons you have to specify run as account manually.`n" -ForegroundColor Yellow
+}
+
+Function CreateMPARRUsersTask
+{
+	# MPARR-AzureADUsers script
+    $taskName = "MPARR-MicrosoftEntraUsers"
+	
+	# Task execution
+    $validDays = 15
+    $choices  = '&Yes', '&No'
+    $decision = $Host.UI.PromptForChoice("", "The task on task scheduler will be set for 15 days, do you want to change?", $choices, 1)
+    if ($decision -eq 0)
+    {
+        ReadNumber -max 31 -msg "Enter number of days (Between 1 to 31). Remember check the retention period in your workspace in Logs Analtytics." -option ([ref]$validDays)
+    }
+
+    # calculate date
+    $dt = Get-Date 
+    $reminder = $dt.Day % $validDays
+    $dt = $dt.AddDays(-$reminder)
+    $startTime = [datetime]::new($dt.Year, $dt.Month, $dt.Day, $dt.Hour, $dt.Minute, 0)
+
+    #create task
+    $trigger = New-ScheduledTaskTrigger -Once -At $startTime -RepetitionInterval (New-TimeSpan -Days $validDays)
+    #$filePath = Join-Path $PSScriptRoot "MPARR-AzureADUsers.ps1"
+    #$workingDir = "{0}" -f ("$PSScriptRoot", "`"$PSScriptRoot`"")[$PSScriptRoot.Contains(" ")]
+    $action = New-ScheduledTaskAction -Execute "`"$PSHOME\pwsh.exe`"" -Argument ".\MPARR-AzureADUsers.ps1" -WorkingDirectory $PSScriptRoot
+    $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopOnIdleEnd -AllowStartIfOnBatteries `
+         -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 1)
+
+    if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) 
+    {
+        Write-Host "`nScheduled task named '$taskName' already exists.`n" -ForegroundColor Yellow
+    }
+    else 
+    {
+        Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings `
+        -RunLevel Highest -ErrorAction Stop | Out-Null
+        Write-Host "`nScheduled task named '$taskName' was created.`nFor security reasons you have to specify run as account manually.`n" -ForegroundColor Yellow
+    }
+}
+
+Function CreateMPARRDomainsTask
+{
+	# MPARR-AzureADDomains script
+    $taskName = "MPARR-MicrosoftEntraDomains"
+	
+	# Task execution
+    $validDays = 30
+    $choices  = '&Yes', '&No'
+    $decision = $Host.UI.PromptForChoice("", "The task on task scheduler will be set for 30 days, do you want to change?", $choices, 1)
+    if ($decision -eq 0)
+    {
+        ReadNumber -max 31 -msg "Enter number of days (Between 1 to 31). Remember check the retention period in your workspace in Logs Analtytics." -option ([ref]$validDays)
+    }
+
+    # calculate date
+    $dt = Get-Date 
+    $reminder = $dt.Day % $validDays
+    $dt = $dt.AddDays(-$reminder)
+    $startTime = [datetime]::new($dt.Year, $dt.Month, $dt.Day, $dt.Hour, $dt.Minute, 0)
+
+    #create task
+    $trigger = New-ScheduledTaskTrigger -Once -At $startTime -RepetitionInterval (New-TimeSpan -Days $validDays)
+    #$filePath = Join-Path $PSScriptRoot "MPARR-AzureADDomains.ps1"
+    #$workingDir = "{0}" -f ("$PSScriptRoot", "`"$PSScriptRoot`"")[$PSScriptRoot.Contains(" ")]
+    $action = New-ScheduledTaskAction -Execute "`"$PSHOME\pwsh.exe`"" -Argument ".\MPARR-AzureADDomains.ps1" -WorkingDirectory $PSScriptRoot
+    $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopOnIdleEnd -AllowStartIfOnBatteries `
+         -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 1)
+
+    if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) 
+    {
+        Write-Host "`nScheduled task named '$taskName' already exists.`n" -ForegroundColor Yellow
+    }
+    else 
+    {
+        Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings `
+        -RunLevel Highest -ErrorAction Stop | Out-Null
+        Write-Host "`nScheduled task named '$taskName' was created.`nFor security reasons you have to specify run as account manually.`n" -ForegroundColor Yellow
+    }
+}
+
+Function CreateMPARRRolesTask
+{
+	# MPARR-AzureADRoles script
+    $taskName = "MPARR-MicrosoftEntraRoles"
+	
+	# Task execution
+    $validDays = 7
+    $choices  = '&Yes', '&No'
+    $decision = $Host.UI.PromptForChoice("", "The task on task scheduler will be set for 7 days, do you want to change?", $choices, 1)
+    if ($decision -eq 0)
+    {
+        ReadNumber -max 31 -msg "Enter number of days (Between 1 to 31). Remember check the retention period in your workspace in Logs Analtytics." -option ([ref]$validDays)
+    }
+
+    # calculate date
+    $dt = Get-Date 
+    $reminder = $dt.Day % $validDays
+    $dt = $dt.AddDays(-$reminder)
+    $startTime = [datetime]::new($dt.Year, $dt.Month, $dt.Day, $dt.Hour, $dt.Minute, 0)
+
+    #create task
+    $trigger = New-ScheduledTaskTrigger -Once -At $startTime -RepetitionInterval (New-TimeSpan -Days $validDays)
+    #$filePath = Join-Path $PSScriptRoot "MPARR-AzureADRoles.ps1"
+    #$workingDir = "{0}" -f ("$PSScriptRoot", "`"$PSScriptRoot`"")[$PSScriptRoot.Contains(" ")]
+    $action = New-ScheduledTaskAction -Execute "`"$PSHOME\pwsh.exe`"" -Argument ".\MPARR-AzureADRoles.ps1" -WorkingDirectory $PSScriptRoot
+    $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopOnIdleEnd -AllowStartIfOnBatteries `
+         -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 1)
+
+    if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) 
+    {
+        Write-Host "`nScheduled task named '$taskName' already exists.`n" -ForegroundColor Yellow
+    }
+    else 
+    {
+        Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings `
+        -RunLevel Highest -ErrorAction Stop | Out-Null
+        Write-Host "`nScheduled task named '$taskName' was created.`nFor security reasons you have to specify run as account manually.`n" -ForegroundColor Yellow
+    }
+}
+
+Function CreateMPARRPurviewTask
+{
+	# Purview scripts for Sensitivity Labels and Sensitive Information Types
+	
+	# MPARR-LabelData.ps1 script
+    $taskName = "MPARR-MicrosoftPurviewSensitivityLabel"
+	
+	<#
+	.NOTES
+	MPARR-LabelData and MPARR-SITData require elevate privileges added to the Microsoft Entra App created in this script
+	The scripts can be execute manually if you want to avoid that elevate privileges, in that case don't create the task.
+	#>
+	Write-Host "`n`n----------------------------------------------------------------------------------------" -ForegroundColor Yellow
+	Write-Host "`nPlease be aware that the scripts MPARR-LabelData and MPARR-SITData needs elevate privileges(Compliance Administrator role)" -ForegroundColor DarkYellow
+	Write-Host "`Skip this task creation or remove from your task scheduler, and execute manually once a month at least." -ForegroundColor DarkYellow
+	Write-Host "`If the permissions is not a problem, please go ahead with this tasks." -ForegroundColor DarkYellow
+	Write-Host "`n----------------------------------------------------------------------------------------" -ForegroundColor Yellow
+	Write-Host "`n`n" 
+	
+	# Task execution
+    $validDays = 7
+    $choices  = '&Yes', '&No'
+    $decision = $Host.UI.PromptForChoice("", "The task on task scheduler will be set for 7 days, do you want to change?", $choices, 1)
+    if ($decision -eq 0)
+    {
+        ReadNumber -max 31 -msg "Enter number of days (Between 1 to 31). Remember check the retention period in your workspace in Logs Analtytics." -option ([ref]$validDays)
+    }
+
+    # calculate date
+    $dt = Get-Date 
+    $reminder = $dt.Day % $validDays
+    $dt = $dt.AddDays(-$reminder)
+    $startTime = [datetime]::new($dt.Year, $dt.Month, $dt.Day, $dt.Hour, $dt.Minute, 0)
+
+    #create task
+    $trigger = New-ScheduledTaskTrigger -Once -At $startTime -RepetitionInterval (New-TimeSpan -Days $validDays)
+    #$filePath = Join-Path $PSScriptRoot "MPARR-LabelData.ps1"
+    #$workingDir = "{0}" -f ("$PSScriptRoot", "`"$PSScriptRoot`"")[$PSScriptRoot.Contains(" ")]
+    $action = New-ScheduledTaskAction -Execute "`"$PSHOME\pwsh.exe`"" -Argument ".\MPARR-LabelData.ps1" -WorkingDirectory $PSScriptRoot
+    $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopOnIdleEnd -AllowStartIfOnBatteries `
+         -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 1)
+
+    if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) 
+    {
+        Write-Host "`nScheduled task named '$taskName' already exists.`n" -ForegroundColor Yellow
+    }
+    else 
+    {
+        Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings `
+        -RunLevel Highest -ErrorAction Stop | Out-Null
+        Write-Host "`nScheduled task named '$taskName' was created.`nFor security reasons you have to specify run as account manually.`n" -ForegroundColor Yellow
+    }
+	
+	# MPARR-SITData.ps1 script
+    $taskName = "MPARR-MicrosoftPurviewSITs"
+    if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) 
+    {
+        Write-Host "`nScheduled task named '$taskName' already exists.`n" -ForegroundColor Yellow
+        return
+    }
+    $dt = $dt.AddDays(5)
+    $startTime = [datetime]::new($dt.Year, $dt.Month, $dt.Day, $dt.Hour, $dt.Minute, 0)
+    $trigger = New-ScheduledTaskTrigger -Once -At $startTime -RepetitionInterval (New-TimeSpan -Days $validDays)
+    #$filePath = Join-Path $PSScriptRoot "MPARR-SITData.ps1"
+    $action = New-ScheduledTaskAction -Execute "`"$PSHOME\pwsh.exe`"" -Argument ".\MPARR-SITData.ps1" -WorkingDirectory $PSScriptRoot
     Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings `
         -RunLevel Highest -ErrorAction Stop | Out-Null
     Write-Host "`nScheduled task named '$taskName' was created.`nFor security reasons you have to specify run as account manually.`n" -ForegroundColor Yellow
@@ -652,6 +862,10 @@ while ($choice -ne "0")
     Write-Host "`t[1] - Setup MPARR (select LA, register Azure app...)"
     Write-Host "`t[2] - Encrypt secrets"
     Write-Host "`t[3] - Create scheduled task"
+	Write-Host "`t[4] - Create scheduled task for users information"
+	Write-Host "`t[5] - Create scheduled task for domains information"
+	Write-Host "`t[6] - Create scheduled task for administrator roles information"
+	Write-Host "`t[7] - Create scheduled task for Purview Sensitivity Labels and SITs information"
     Write-Host "`t[0] - Exit"
 	Write-Host "`n"
 	Write-Host "`nPlease choose option:"
@@ -670,6 +884,10 @@ while ($choice -ne "0")
             }
         "3" {CreateScheduledTask; break}
         "2" {EncryptSecrets; break}
+		"4" {CreateMPARRUsersTask; break}
+		"5" {CreateMPARRDomainsTask; break}
+		"6" {CreateMPARRRolesTask; break}
+		"7" {CreateMPARRPurviewTask; break}
     }
 }
 
