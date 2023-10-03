@@ -34,6 +34,7 @@ HISTORY
   2023-09-28    G.Berdzik   - Fixes
   2023-10-02	S.Zamorano	- Fix some descriptions
   2023-10-03	S.Zamorano	- Added new tasks on task scheduler creation for supporting scripts (Users, Domains, Roles, Labels, SITs)
+  2023-10-03	S.Zamorano	- Added digital signature for MPARR scripts
 #>
 
 #------------------------------------------------------------------------------  
@@ -779,6 +780,96 @@ Function CreateMPARRPurviewTask
     Write-Host "`nScheduled task named '$taskName' was created.`nFor security reasons you have to specify run as account manually.`n" -ForegroundColor Yellow
 }
 
+Function SelfSignScripts
+{
+	#Menu for self signed or use an own certificate
+	<#
+	.NOTES
+	MPARR scripts can request change your Execution Policy to bypass to be executed, using PS:\> Set-ExecutionPolicy -ExecutionPolicy bypass.
+	In some organizations for security concerns this cannot be set, and the script need to be digital signed.
+	This function permit to use a self-signed certificate or use an external one. 
+	BE AWARE : The external certificate needs to be for a CODE SIGNING is not a coomon SSL certificate.
+	#>
+	
+	Write-Host "`n`n----------------------------------------------------------------------------------------" -ForegroundColor Yellow
+	Write-Host "`nThis option will be digital sign all MPARR scripts." -ForegroundColor DarkYellow
+	Write-Host "The certificate used is the kind of CodeSigning not a SSL certificate" -ForegroundColor DarkYellow
+	Write-Host "If you choose to select your own certificate be aware of this." -ForegroundColor DarkYellow
+	Write-Host "`n----------------------------------------------------------------------------------------" -ForegroundColor Yellow
+	Write-Host "`n`n" 
+	
+	# Decide if you want to progress or not
+	$choices  = '&Yes', '&No'
+    $decision = $Host.UI.PromptForChoice("", "Do you want to proceed with the digital signature for all the scripts?", $choices, 1)
+	if ($decision -eq 1)
+	{
+		Write-Host "`nYou decide don't proceed with the digital signature." -ForegroundColor DarkYellow
+		Write-Host "Remember to use MPARR scripts set permissions with Administrator rigths on Powershel using:." -ForegroundColor DarkYellow
+		Write-Host "`nSet-ExecutionPolicy -ExecutionPolicy bypass." -ForegroundColor Green
+	} else
+	{
+		
+		#Review if some certificate was installed previously
+		Write-Host "`nGetting Code Signing certificates..." -ForegroundColor Green
+		$i = 1
+		$certificates = @(Get-ChildItem Cert:\CurrentUser\My | Where-Object {$_.EnhancedKeyUsageList -like "*Code Signing*"}| Select-Object Subject, Thumbprint, NotBefore, NotAfter | ForEach-Object {$_ | Add-Member -Name "No" -MemberType NoteProperty -Value ($i++) -PassThru})
+		$certificates | Format-Table No, Subject, Thumbprint, NotBefore, NotAfter | Out-Host
+		
+		if ($certificates.Count -eq 0)
+		{
+			Write-Host "`nNo certificates for Code Signing was found." -ForegroundColor Red
+			Write-Host "Proceeding to create one..."
+			Write-Host "This can take a minute and a pop-up will appear, please accept to install the certificate."
+			Write-Host "After finish you'll be forwarded to the initial Certificate menu."
+			CreateCodeSigningCertificate
+			SelfSignScripts
+		} else{
+			$selection = 0
+			ReadNumber -max ($i -1) -msg "Enter number corresponding to the certificate to use" -option ([ref]$selection)
+			#Obtain certificate from local store
+			$cert = Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert | Where-Object {$_.Thumbprint -eq $certificates[$selection - 1].Thumbprint}
+			
+			#Sign MPARR Scripts
+			$files = Get-ChildItem -Path .\MPARR*
+			
+			foreach($file in $files)
+			{
+				Write-Host "`Signing..."
+				Write-Host "$($file.Name)" -ForegroundColor Green
+				Set-AuthenticodeSignature -FilePath ".\$($file.Name)" -Certificate $cert
+			}
+		}
+	}
+}
+
+Function CreateCodeSigningCertificate
+{
+	#CMDLET to create certificate
+	$MPARRcert = New-SelfSignedCertificate -Subject "CN=MPARR PowerShell Code Signing Cert" -Type "CodeSigning" -CertStoreLocation "Cert:\CurrentUser\My" -HashAlgorithm "sha256"
+		
+	### Add Self Signed certificate as a trusted publisher (details here https://adamtheautomator.com/how-to-sign-powershell-script/)
+		
+		# Add the self-signed Authenticode certificate to the computer's root certificate store.
+		## Create an object to represent the CurrentUser\Root certificate store.
+		$rootStore = [System.Security.Cryptography.X509Certificates.X509Store]::new("Root","CurrentUser")
+		## Open the root certificate store for reading and writing.
+		$rootStore.Open("ReadWrite")
+		## Add the certificate stored in the $authenticode variable.
+		$rootStore.Add($MPARRcert)
+		## Close the root certificate store.
+		$rootStore.Close()
+			 
+		# Add the self-signed Authenticode certificate to the computer's trusted publishers certificate store.
+		## Create an object to represent the CurrentUser\TrustedPublisher certificate store.
+		$publisherStore = [System.Security.Cryptography.X509Certificates.X509Store]::new("TrustedPublisher","CurrentUser")
+		## Open the TrustedPublisher certificate store for reading and writing.
+		$publisherStore.Open("ReadWrite")
+		## Add the certificate stored in the $authenticode variable.
+		$publisherStore.Add($MPARRcert)
+		## Close the TrustedPublisher certificate store.
+		$publisherStore.Close()	
+}
+
 function EncryptSecrets
 {
     # read config file
@@ -866,6 +957,7 @@ while ($choice -ne "0")
 	Write-Host "`t[5] - Create scheduled task for domains information"
 	Write-Host "`t[6] - Create scheduled task for administrator roles information"
 	Write-Host "`t[7] - Create scheduled task for Purview Sensitivity Labels and SITs information"
+	Write-Host "`t[8] - Sign MPARR scripts"
     Write-Host "`t[0] - Exit"
 	Write-Host "`n"
 	Write-Host "`nPlease choose option:"
@@ -888,6 +980,7 @@ while ($choice -ne "0")
 		"5" {CreateMPARRDomainsTask; break}
 		"6" {CreateMPARRRolesTask; break}
 		"7" {CreateMPARRPurviewTask; break}
+		"8" {SelfSignScripts; break}
     }
 }
 
