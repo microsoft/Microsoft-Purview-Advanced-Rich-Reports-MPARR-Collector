@@ -9,7 +9,7 @@
 
     [1] - Full setup (select Subscription, Log Analytics workspace, create Azure app registration, specify required parameters)
     [2] - Encrypt secrets
-	[3] - Create scheduled task
+	[3] - Create scheduled task for Core Scripts (MPARR Collector and RMS)
 	[4] - Create scheduled task for users information
     [5] - Create scheduled task for domains information
     [6] - Create scheduled task for administrator roles information
@@ -19,7 +19,7 @@
     
 .NOTES
     Version 0.9
-    Current version - 03.10.2023.02
+    Current version - 05.10.2023.02
 #> 
 
 <#
@@ -36,6 +36,7 @@ HISTORY
   2023-10-02	S.Zamorano	- Fix some descriptions
   2023-10-03	S.Zamorano	- Added new tasks on task scheduler creation for supporting scripts (Users, Domains, Roles, Labels, SITs)
   2023-10-03	S.Zamorano	- Added digital signature for MPARR scripts
+  2023-10-05	S.Zamorano	- Added comment in the configuration menu
 #>
 
 #------------------------------------------------------------------------------  
@@ -953,7 +954,7 @@ while ($choice -ne "0")
     Write-Host "`nWhat do you want to do?"
     Write-Host "`t[1] - Setup MPARR (select LA, register Azure app...)"
     Write-Host "`t[2] - Encrypt secrets"
-    Write-Host "`t[3] - Create scheduled task"
+    Write-Host "`t[3] - Create scheduled task for Core Scripts (MPARR Collector and RMS)"
 	Write-Host "`t[4] - Create scheduled task for users information"
 	Write-Host "`t[5] - Create scheduled task for domains information"
 	Write-Host "`t[6] - Create scheduled task for administrator roles information"
