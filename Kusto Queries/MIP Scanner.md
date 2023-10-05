@@ -9,7 +9,7 @@
 <br/>    | where Common_ProcessName_s == "MSIP.Scanner" and Operation_s != "HeartBeat" and Operation_s != "FileDeleted" and Operation_s != "Search" and Operation_s != "Validate"
 <br/>    | extend Extensions = " "
 <br/>    | extend Filename = ObjectId_s
-<br/>    | extend FileName = replace_regex(Filename, @'^.*[\\\/]', '')
+<br/>    | extend FileName = replace_regex(Filename, @'^.*[\\\\\/]', '')
 <br/>    | extend PATH = parse_path(ObjectId_s)
 <br/>    | parse PATH with * '"DirectoryPath":"' PATH1
 <br/>    | parse PATH1 with * '"AlternateDataStreamName":"' PATH2
