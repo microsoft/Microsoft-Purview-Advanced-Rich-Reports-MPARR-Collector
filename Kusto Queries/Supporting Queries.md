@@ -18,6 +18,13 @@ AzureADUsers_CL
 ### Query used to collect records from AzureADDomains_CL table removing duplicated data
 ```Kusto
 AzureADDomains_CL
-| where TimeGenerated >= now(-30d)
-| summarize arg_max(TimeGenerated, Domain_s) by Domain_s
+| where TimeGenerated >= now(-90d)
+| summarize arg_max(TimeGenerated, Type) by Domain_s
+```
+
+### Query used to collect records from AzureADRoles_CL table removing duplicated data
+```Kusto
+AzureADRoles_CL 
+| where TimeGenerated >= now(-90d)
+| summarize arg_max(TimeGenerated, Description_s, Members_s, RoleID_g) by DisplayName_s
 ```
