@@ -16,7 +16,7 @@
 <br/>    | extend PATH2
 <br/>    | extend PATH = iff(PATH2 !contains 'http', PATH1 = trim_end(@'","DirectoryName":".*"}',PATH1), PATH2 )
 <br/>    | extend Location = iff(PATH startswith "http", 'Web', Location = iff(PATH contains ":\\\\", 'Workstation', Location = iff(PATH contains "\\\\", 'Server', 'Unidentified')))
-<br/>    | extend PATH = iff(PATH startswith "http", replace_string(PATH,'//', '/'), replace_string(PATH, '\\\\', '\\'))
+<br/>    | extend PATH = iff(PATH startswith "http", replace_string(PATH,'//', '/'), replace_string(PATH, '\\\\\\\\', '\\\\'))
 <br/>    | project
 <br/>        Label = column_ifexists('SensitivityLabelEventData_SensitivityLabelId_g',''),
 <br/>        Date = column_ifexists('TimeGenerated',''),
