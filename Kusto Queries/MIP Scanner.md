@@ -5,7 +5,7 @@
 <br/>Please remember that you need to have Scanner activities after the MPARR Collector was start to collect data, any previously activity is not collected.
 
 <br/>AuditGeneral_CL 
-<br/>| where TimeGenerated <br/>= now(-90d) 
+<br/>| where TimeGenerated >= now(-90d) 
 <br/>| where Common_ProcessName_s == "MSIP.Scanner" and Operation_s != "HeartBeat" and Operation_s != "FileDeleted" and Operation_s != "Search" and Operation_s != "Validate" 
 <br/>| extend Extensions = " " 
 <br/>| extend Filename = ObjectId_s
