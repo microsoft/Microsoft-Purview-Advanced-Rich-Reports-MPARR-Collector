@@ -12,7 +12,7 @@
 ```Kusto
 AzureADUsers_CL 
 | where TimeGenerated >= now(-30d)
-| summarize arg_max(TimeGenerated, UserPrincipalName_s, DisplayName_s, AssignedLicenses_s, City_s, JobTitle_s, Department_s, Mail_s, OfficeLocation_s, UserID_g) by UserPrincipalName_s
+| summarize arg_max(TimeGenerated, UserPrincipalName_s, DisplayName_s, AssignedLicenses_s, City_s, JobTitle_s, Department_s, Mail_s, OfficeLocation_s, UserID_g, LastAccess_t) by UserPrincipalName_s
 ```
 
 ### Query used to collect records from AzureADDomains_CL table removing duplicated data
