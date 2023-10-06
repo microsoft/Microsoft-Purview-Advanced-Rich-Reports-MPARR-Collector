@@ -32,6 +32,6 @@ AzureADRoles_CL
 ### Query used to collect records from MSProducts_CL table removing duplicated data
 ```Kusto
 MSProducts_CL 
-| where TimeGenerated >= now(-90d)
+| where TimeGenerated >= now(-30d)
 | summarize arg_max(Product_Display_Name_s, TimeGenerated, String_Id_s, Service_Plan_Name_s, Service_Plans_Included_Friendly_Names_s) by GUID_g, Service_Plan_Id_g
 ```
