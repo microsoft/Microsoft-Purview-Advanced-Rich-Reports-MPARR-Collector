@@ -15,6 +15,7 @@ All these scripts are connected to Microsoft Graph API through the permissions a
 ### Query used to collect records from AzureADUsers_CL table removing duplicated data
 > [!NOTE]
 > To obtain values you need previously executed MPARR-AzureADUsers.ps1 script
+
 > [!IMPORTANT]
 > Please remember that you can change the attributes collected from Microsoft Entra ID(Azure AD) modifying the script MPARR-AzureADUsers.ps1
 
