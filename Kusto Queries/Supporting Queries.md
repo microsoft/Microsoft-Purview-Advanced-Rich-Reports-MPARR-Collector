@@ -40,6 +40,9 @@ AzureADRoles_CL
 ```
 
 ### Query used to collect records from MSProducts_CL table removing duplicated data
+> [!NOTE]
+> This script doesn't use any kind of API, only takes a CSV file with all the Microsoft licensing friendly-name and create a matrix in Logs Analytics with the IDs, short names and knowed names
+
 ```Kusto
 MSProducts_CL 
 | where TimeGenerated >= now(-30d)
