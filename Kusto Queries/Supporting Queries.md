@@ -3,12 +3,21 @@
 > [!NOTE]
 > The next queries are set in 30 days as an example, you can modify that value
 
-## These are queries over AzureADUsers_CL table
+## These are queries over tables created using Microsoft Graph API
 
+The next information can be collected through the use of these scripts:
+- MPARR-AzureADUsers
+- MPARR-AzureADDomains
+- MPARR-AzureADRoles
+
+All these scripts are connected to Microsoft Graph API through the permissions added under the Microsoft Entra(previously called Azure AD) App, normally called MPARR-Datacollector. And this scripts uses a Current User certificate, if yu need a Local Machine certificate some little changes can be do it for that.
+
+### Query used to collect records from AzureADUsers_CL table removing duplicated data
+> [!NOTE]
+> To obtain values you need previously executed MPARR-AzureADUsers.ps1 script
 > [!IMPORTANT]
 > Please remember that you can change the attributes collected from Microsoft Entra ID(Azure AD) modifying the script MPARR-AzureADUsers.ps1
 
-### Query used to collect records from AzureADUsers_CL table removing duplicated data
 ```Kusto
 AzureADUsers_CL 
 | where TimeGenerated >= now(-30d)
