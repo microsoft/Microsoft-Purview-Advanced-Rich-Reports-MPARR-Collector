@@ -19,6 +19,16 @@ RMSDataDetails_CL
     Day = datetime_part('Day',TimeGenerated)
 ```
 
+```Kusto
+RMSData_CL 
+| where TimeGenerated > now(-730d)
+| summarize by 
+    Year = datetime_part('Year',TimeGenerated), 
+    Month = datetime_part('Month',TimeGenerated),
+    Day = datetime_part('Day',TimeGenerated)
+``` 
+
+
 ## Detailed information collected
 
 ### MPARR-RMSData.ps1
@@ -37,3 +47,24 @@ RMSDataDetails_CL
     Rights_s,
     Successful_b
 ```
+
+```Kusto
+RMSData_CL 
+| where TimeGenerated > now(-730d)
+| where content_id_g != "" and template_id_g != "" and user_id_s !contains "@aadrm.com"
+| project 
+    TimeGenerated,
+    content_id_g,
+    template_id_g,
+    date_s,
+    time_s,
+    request_type_s,
+    user_id_s,
+    result_s,
+    owner_email_s,
+    issuer_s,
+    date_published_s,
+    c_info_s,
+    c_ip_s
+```
+
