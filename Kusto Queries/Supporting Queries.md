@@ -48,3 +48,17 @@ MSProducts_CL
 | where TimeGenerated >= now(-30d)
 | summarize arg_max(Product_Display_Name_s, TimeGenerated, String_Id_s, Service_Plan_Name_s, Service_Plans_Included_Friendly_Names_s) by GUID_g, Service_Plan_Id_g
 ```
+
+## These are queries over tables created using Exchange Online Manage API
+
+The next information can be collected through the use of these scripts:
+- MPARR-SITData
+- MPARR-LabelData
+
+### Query used to collect records from Labels_CL table removing duplicated data
+```Kusto
+Labels_CL
+| where TimeGenerated >= now(-30d)
+| summarize arg_max(TimeGenerated, Name_s, Guid_g, Priority_d, ParentLabelDisplayName_s  ) by DisplayName_s
+```
+
