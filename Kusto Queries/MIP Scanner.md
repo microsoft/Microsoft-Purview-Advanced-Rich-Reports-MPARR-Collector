@@ -15,7 +15,7 @@ AuditGeneral_CL
 | where Common_ProcessName_s == "MSIP.Scanner" and Operation_s != "HeartBeat" and Operation_s != "FileDeleted" and Operation_s != "Search" and Operation_s != "Validate"
 | extend Extensions = " "
 | extend Filename = ObjectId_s
-| extend FileName = replace_regex(Filename, @'^.[\\/]', '')
+| extend FileName = replace_regex(Filename, @'^.*[\\/]', '')
 | extend PATH = parse_path(ObjectId_s)
 | parse PATH with * '"DirectoryPath":"' PATH1
 | parse PATH1 with * '"AlternateDataStreamName":"' PATH2
