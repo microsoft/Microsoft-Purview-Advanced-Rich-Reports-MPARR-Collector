@@ -68,3 +68,41 @@ RMSData_CL
     c_ip_s
 ```
 
+```Kusto
+AuditGeneral_CL
+| where CurrentProtectionType_templateId_g!= ""
+| project 
+    TimeGenerated,
+    SensitivityLabelEventData_JustificationText_s,
+    PreviousProtectionType_templateId_g,
+    CurrentProtectionType_templateId_g,
+    IrmContentId_g,
+    SensitivityLabelEventData_OldSensitivityLabelId_g,
+    Platform_s,
+    ContentType_s,
+    CurrentProtectionType_documentEncrypted_b,
+    CurrentProtectionType_owner_s,
+    CurrentProtectionType_protectionType_d,
+    EmailInfo_From_s,
+    EmailInfo_To_s,
+    EmailInfo_Cc_s,
+    PreviousProtectionType_documentEncrypted_b,
+    PreviousProtectionType_owner_s,
+    PreviousProtectionType_protectionType_d,
+    ProtectionEventType_d,
+    TargetLocation_d,
+    SensitivityLabelEventData_ActionSource_d,
+    SensitivityLabelEventData_LabelEventType_d,
+    SensitivityLabelEventData_SensitivityLabelId_g,
+    LabelId_g,
+    UserId_s,
+    Id_g,
+    RecordType_d,
+    Operation_s,
+    Workload_s,
+    EventCreationTime_t,
+    ClientIP_s,
+    ObjectId_s,
+    Application_s,
+    DeviceName_s
+```
