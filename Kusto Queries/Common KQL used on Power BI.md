@@ -78,6 +78,7 @@ RMSData_CL
     c_ip_s
 ```
 
+### MPARR_Collector.ps1
 ```Kusto
 AuditGeneral_CL
 | where CurrentProtectionType_templateId_g!= ""
