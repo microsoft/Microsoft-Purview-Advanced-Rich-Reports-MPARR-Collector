@@ -18,14 +18,15 @@ Next, we will explain how to this information is collected, and some considerati
 ## How to the information is collected
 
 In the next diagram we will try to explain step by step how to the data is generated and collected through log services.
-
-![MPARR - RMSData explained](https://github.com/microsoft/Microsoft-Purview-Advanced-Rich-Reports-MPARR-Collector/assets/44684110/002a4c6e-a714-43af-ba2f-6697098b0347)
+<p align="center">
+<img src="https://github.com/microsoft/Microsoft-Purview-Advanced-Rich-Reports-MPARR-Collector/assets/44684110/002a4c6e-a714-43af-ba2f-6697098b0347"/></p>
 <p align="center">MPARR-RMSData logs generated and collected</p>
 
 1. When a user want to protect a document through a RMS Template or Sensitivity Label that user start an internal process to collect certificates, digital signatures protection templates and more, that is used to protect the information
 1. Azure Right Management Service validate the connection and return all the previously mentioned items, recording in logs all these steps.
 1. The document is protected and an attribute called Content ID is populated
-![Get-AIPFileStatus](https://github.com/microsoft/Microsoft-Purview-Advanced-Rich-Reports-MPARR-Collector/assets/44684110/9da9acc6-5d3c-419a-9f7b-e47be063bb31)
+<p align="center">
+<img src="https://github.com/microsoft/Microsoft-Purview-Advanced-Rich-Reports-MPARR-Collector/assets/44684110/9da9acc6-5d3c-419a-9f7b-e47be063bb31"/></p>
 <p align="center">Get-AIPFileStatus to show Content ID</p>
 3. Document is sent or shared with protection
 4. Recipient receive the document and the Microsoft 365 Apps for Enterprise(formerly called Office), or PDF reader applications, start a complete process in the background to request to Azure RMS to validate access en the permissions grantes.
@@ -36,6 +37,16 @@ In the next diagram we will try to explain step by step how to the data is gener
 
 Normally when you try to use tracking and revoke actions over protected documents, after you have DIRECT access to the file and obtain the Content ID, using Get-AIPFileStatus, you can request all the access through a PowerShell cmdlet, after you connect first to the AIP service, you can execute Get-AIPServiceTrackingLog with the Content ID and the result shown access denied or granted, rights granted, IP Address, requestor and some additional information.
 
-![Get-AIPServiceTrackingLog](https://github.com/microsoft/Microsoft-Purview-Advanced-Rich-Reports-MPARR-Collector/assets/44684110/2dbe4072-03e1-4027-af9e-37175c602549)
+<p align="center">
+<img src="https://github.com/microsoft/Microsoft-Purview-Advanced-Rich-Reports-MPARR-Collector/assets/44684110/2dbe4072-03e1-4027-af9e-37175c602549"/></p>
 <p align="center">Get-AIPServiceTrackingLog using Content ID and the data returned</p>
 
+Do the previous steps for each file inside of our organization is almost impossible, here is when MPARR-RMSData.ps1 do their magic.
+MPARR-RMSData run the cmdlet Get-AipServiceUserLog tha collects all the information generated in the points 2 and 6 from the previous Diagram and send all that information to the RMSData_CL table in Logs Analytics and everytime time that the field "Content ID" appears with information, the same script execute the cmdlet Get-AIPServiceTrackingLog for that value and the data is collected in the RMSDataDetails_CL table.
+This exercise permit to have a complete track every time that a protected document is tried to open and the results from that action, and collect all that information.
+
+> The big deal... this information doesn't contains file name, or path of the file, or other relevant information.
+
+Here coming the relationship between MPARR-RMSData and MPARR_Collector, the activities from the end user in the point 1 are sent to Microsoft 365 Audit logs that can be collected by our Collector and are sent to, in this case, the table AuditGeneral_CL to the workspace in Logs Analytics. [KQL for Audit General used in this report](https://github.com/microsoft/Microsoft-Purview-Advanced-Rich-Reports-MPARR-Collector/blob/main/Kusto%20Queries/Common%20KQL%20used%20on%20Power%20BI.md#mparr_collectorps1)
+
+Happens as we mentiones previously that MPARR_Collector today collects more than 680 different activities, or at least the activities that we was identifying until now, that is too many information and we need to reduce the data request from Logs Analytics, in that case the previous Query permit to collect only the information needed for this report.
