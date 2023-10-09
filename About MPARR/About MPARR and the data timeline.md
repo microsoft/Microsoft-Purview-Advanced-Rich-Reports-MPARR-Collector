@@ -19,3 +19,5 @@ One of the most common options to collect all the records without limits is use 
 MPARR uses the Office 365 management API and based in that architecture the Collector collects the daily information. For some specific cases MPARR_Collector.ps1 have some attributes that can be used to collect past data but only if that activity occur in the past 7 days. (You can see the first diagram that explains)
 
 Understanding the importance of collect data for a bigger time frame, MPARR can send the data to Logs Analytics by default, where the data can be collected for time frame of 2 years and have the capability to all the information or certain information beed retained for 7 years.
+
+With the data stored in a Logs Analytics workspace we can consume the information through Sentinel or Power BI, this permit to access to all the activities generated on Microsoft 365 and Microsoft Purview and easily identify some specific actions. With the supporting scripts, MPARR permit to filter the data using Microsoft Entra(previously called Azure AD) attributes enriching the data and permiting to generate more advanced reports.
