@@ -62,3 +62,10 @@ Labels_CL
 | summarize arg_max(TimeGenerated, Name_s, Guid_g, Priority_d, ParentLabelDisplayName_s  ) by DisplayName_s
 ```
 
+### Query used to collect records from SITs_CL table removing duplicated data
+```Kusto
+SITs_CL 
+| where TimeGenerated >= now(-30d)
+| summarize arg_max(TimeGenerated, Name_s, Publisher_s, Type_s, RecommendedConfidence_d, Description_s) by SIT_Id_g
+```
+
