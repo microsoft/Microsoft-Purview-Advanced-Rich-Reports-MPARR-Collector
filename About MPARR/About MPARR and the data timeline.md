@@ -12,7 +12,8 @@ The normal consumption for all these activities is through Microsoft Purview Aud
 
 The other option, to collect an reduced segment of all this data, is through Activity Explorer, in this case the information collected is related to end user activities for Microsoft Information. In this case we can have activities related to DLP, MIP, Retention and others, always related to end users; from this option we can export from the Web Interface 10k records or 30K records using PowerShell, but only accessing to the last 30 days. In this case the limits will be increased, but in some cases is still a small number.
 
-![Current M365 Log architecture](https://github.com/microsoft/Microsoft-Purview-Advanced-Rich-Reports-MPARR-Collector/assets/44684110/f2b03211-a5dd-476a-8d29-6440915576ed)
+<p align="center">
+<img src="https://github.com/microsoft/Microsoft-Purview-Advanced-Rich-Reports-MPARR-Collector/assets/44684110/f2b03211-a5dd-476a-8d29-6440915576ed"></p>
 <p align="center">Microsoft 365 & Microsoft Purview current log architecture</p>
 
 One of the most common options to collect all the records without limits is use the Office 365 Management API, normally used by SIEM solutions, but this API is thought to collect the daily information, and in that order of ideas, only the past 7 days can be requested.
