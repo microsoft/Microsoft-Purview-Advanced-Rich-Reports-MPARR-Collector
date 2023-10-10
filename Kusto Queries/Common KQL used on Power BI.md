@@ -49,6 +49,15 @@ AuditExchange_CL
     Day = datetime_part('Day',TimeGenerated)
 ```
 
+```Kusto
+AuditSharePoint_CL 
+| where TimeGenerated > now(-730d)
+| summarize by 
+    Year = datetime_part('Year',TimeGenerated), 
+    Month = datetime_part('Month',TimeGenerated),
+    Day = datetime_part('Day',TimeGenerated)
+```
+
 ## Detailed information collected
 
 ### MPARR-RMSData.ps1
