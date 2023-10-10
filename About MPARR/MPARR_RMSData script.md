@@ -50,3 +50,14 @@ This exercise permit to have a complete track every time that a protected docume
 Here coming the relationship between MPARR-RMSData and MPARR_Collector, the activities from the end user in the point 1 are sent to Microsoft 365 Audit logs that can be collected by our Collector and are sent to, in this case, the table AuditGeneral_CL to the workspace in Logs Analytics. [KQL for Audit General used in this report](https://github.com/microsoft/Microsoft-Purview-Advanced-Rich-Reports-MPARR-Collector/blob/main/Kusto%20Queries/Common%20KQL%20used%20on%20Power%20BI.md#mparr_collectorps1)
 
 Happens as we mentiones previously that MPARR_Collector today collects more than 680 different activities, or at least the activities that we was identifying until now, that is too many information and we need to reduce the data request from Logs Analytics, in that case the previous Query permit to collect only the information needed for this report.
+
+And here we can see the relationship between all the tables in the Power BI template:
+<p align="center">
+<img src="https://github.com/microsoft/Microsoft-Purview-Advanced-Rich-Reports-MPARR-Collector/assets/44684110/af990575-92b8-4a4a-9332-3b9c3fc6d6be"/></p>
+<p align="center">MPARR - Access review data relationship</p>
+
+We found that we can create a relationship between:
+- RMSDataDetails_CL : ContentId_g -> RMSData_CL : content_id_g
+- RMSData_CL : template_id_g -> AuditGeneral_CL : CurrentProtectionType_templateId_g
+
+In this last point we need to understand that MPARR can show only the information collected, and if you review the point related to [About MPARR and the data timeline](https://github.com/microsoft/Microsoft-Purview-Advanced-Rich-Reports-MPARR-Collector/blob/main/About%20MPARR/About%20MPARR%20and%20the%20data%20timeline.md#about-mparr-collector-and-mparr-rmsdata-scripts-and-the-data-timeline); we need to understand that any documented protected previously, to starting use MPARR, doesn't appears on the Logs, for that reason at the begins can be common have reports about access denied or granted without identify the file name and the path.
