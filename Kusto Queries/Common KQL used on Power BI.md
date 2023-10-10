@@ -29,9 +29,19 @@ RMSData_CL
 ``` 
 
 ### MPARR-Collector.ps1 (Office 365 Management API)
+Exist some documentation about some limits on Power BI when we try to download certain number of information using a query, with these queries we can obtain the dates where we can found activities in each table, tha dates are separated in Year, Month and Day, after that we can use other queries as a functions and, finally, generate a query per day increasing the number of results, a kind of way to skip the limit.
 
 ```Kusto
 AuditGeneral_CL  
+| where TimeGenerated > now(-730d)
+| summarize by 
+    Year = datetime_part('Year',TimeGenerated), 
+    Month = datetime_part('Month',TimeGenerated),
+    Day = datetime_part('Day',TimeGenerated)
+```
+
+```Kusto
+AuditExchange_CL 
 | where TimeGenerated > now(-730d)
 | summarize by 
     Year = datetime_part('Year',TimeGenerated), 
@@ -79,6 +89,9 @@ RMSData_CL
 ```
 
 ### MPARR_Collector.ps1
+
+#### Query used in "MPARR - MIP Access overview" Power BI template
+
 ```Kusto
 AuditGeneral_CL
 | where CurrentProtectionType_templateId_g!= ""
