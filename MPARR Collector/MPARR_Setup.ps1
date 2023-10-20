@@ -18,8 +18,8 @@
     [0] - Exit 
     
 .NOTES
-    Version 0.9
-    Current version - 05.10.2023.02
+    Version 1.0
+    Current version - 20.10.2023
 #> 
 
 <#
@@ -37,6 +37,7 @@ HISTORY
   2023-10-03	S.Zamorano	- Added new tasks on task scheduler creation for supporting scripts (Users, Domains, Roles, Labels, SITs)
   2023-10-03	S.Zamorano	- Added digital signature for MPARR scripts
   2023-10-05	S.Zamorano	- Added comment in the configuration menu
+  2023-10-20	S.Zamorano	- Folder selection added for Task Scheduler, permit to create or use existing.
 #>
 
 #------------------------------------------------------------------------------  
@@ -245,7 +246,7 @@ function SConnectToLA
     Write-Host "`n"
 }
 
-# Function to create Azure App
+# function to create Azure App
 function NewApp
 {
     Connect-MgGraph -Scopes "Application.ReadWrite.All", "AppRoleAssignment.ReadWrite.All", "Directory.ReadWrite.All", "User.ReadWrite.All"
@@ -528,11 +529,70 @@ function WriteToJsonFile
     Write-Host "Setup completed. New config file was created." -ForegroundColor Green
 }
 
+function CreateScheduledTaskFolder
+{
+	param([string]$taskFolder)
+	
+	#Main interface to select folder
+	Write-Host "`n`n----------------------------------------------------------------------------------------" -ForegroundColor Yellow
+	Write-Host "`n Please be aware that this list of Task Scheduler folder don't show empty folders." -ForegroundColor Red
+	Write-Host "`n----------------------------------------------------------------------------------------" -ForegroundColor Yellow
+	
+	# Generate a unique list of parent folders under task scheduler
+	$TSFolder = Get-ScheduledTask
+	$uniqueTaskFolder = $TSFolder.TaskPath | Select-Object -Unique
+	$tempFolder = $uniqueTaskFolder -replace '^\\(\w+)\\.*?.*','$1'
+	$listTaskFolders = $tempFolder | Select-Object -Unique
+	foreach ($folder in $listTaskFolders){$SchedulerTaskFolders += @([pscustomobject]@{Name=$folder})}
+	
+	Write-Host "`nGetting Folders..." -ForegroundColor Green
+    $i = 1
+    $SchedulerTaskFolders = @($SchedulerTaskFolders | ForEach-Object {$_ | Add-Member -Name "No" -MemberType NoteProperty -Value ($i++) -PassThru})
+    
+	#List all existing folders under Task Scheduler
+    $SchedulerTaskFolders | Select-Object No, Name | Out-Host
+	
+	# Default folder for MPARR tasks
+    $MPARRTSFolder = "MPARR"
+	$taskFolder = "\"+$MPARRTSFolder+"\"
+	$choices  = '&Proceed', '&Change', '&Existing'
+	Write-Host "Please consider if you want to use the default location you need select Existing and the option 1." -ForegroundColor Yellow
+    $decision = $Host.UI.PromptForChoice("", "Default task Scheduler Folder is '$MPARRTSFolder'. Do you want to Proceed, Change the name or use Existing one?", $choices, 0)
+    if ($decision -eq 1)
+    {
+        $ok = $false
+        do 
+        {
+            $newName = Read-Host "Please enter the new name for the Task Scheduler folder"
+        }
+        until ($newName -ne "")
+        $taskFolder = "\"+$newName+"\"
+		Write-Host "The name selected for the folder under Task Scheduler is $newName." -ForegroundColor Green
+		return $taskFolder
+    }if ($decision -eq 0)
+	{
+		Write-Host "Using the default folder $MPARRTSFolder." -ForegroundColor Green
+		return $taskFolder
+	}else
+	{
+		$selection = 0
+		ReadNumber -max ($i -1) -msg "Enter number corresponding to the current folder in the Task Scheduler" -option ([ref]$selection) 
+		$value = $selection - 1
+		$MPARRTSFolder = $SchedulerTaskFolders[$value].Name
+		$taskFolder = "\"+$SchedulerTaskFolders[$value].Name+"\"
+		Write-Host "Folder selected for this task $MPARRTSFolder " -ForegroundColor Green
+		return $taskFolder
+	}
+	
+}
 
 function CreateScheduledTask
 {
     # main data collector script
     $taskName = "MPARR-DataCollector"
+	
+	# Call function to set a folder for the task on Task Scheduler
+	$taskFolder = CreateScheduledTaskFolder
 	
 	<#
 	.NOTES
@@ -564,20 +624,20 @@ function CreateScheduledTask
     $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopOnIdleEnd -AllowStartIfOnBatteries `
          -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 1)
 
-    if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) 
+    if (Get-ScheduledTask -TaskName $taskName -TaskPath $taskFolder -ErrorAction SilentlyContinue) 
     {
         Write-Host "`nScheduled task named '$taskName' already exists.`n" -ForegroundColor Yellow
     }
     else 
     {
         Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings `
-        -RunLevel Highest -ErrorAction Stop | Out-Null
+        -RunLevel Highest -TaskPath $taskFolder -ErrorAction Stop | Out-Null
         Write-Host "`nScheduled task named '$taskName' was created.`nFor security reasons you have to specify run as account manually.`n" -ForegroundColor Yellow
     }
 
     # RMS data script
     $taskName = "MPARR-DataCollector-RMS"
-    if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) 
+    if (Get-ScheduledTask -TaskName $taskName -TaskPath $taskFolder -ErrorAction SilentlyContinue) 
     {
         Write-Host "`nScheduled task named '$taskName' already exists.`n" -ForegroundColor Yellow
         return
@@ -588,14 +648,17 @@ function CreateScheduledTask
     #$filePath = Join-Path $PSScriptRoot "MPARR-RMSData.ps1"
     $action = New-ScheduledTaskAction -Execute '"C:\Windows\system32\WindowsPowerShell\v1.0\powershell.exe"' -Argument ".\MPARR-RMSData.ps1" -WorkingDirectory $PSScriptRoot
     Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings `
-        -RunLevel Highest -ErrorAction Stop | Out-Null
+        -RunLevel Highest -TaskPath $taskFolder -ErrorAction Stop | Out-Null
     Write-Host "`nScheduled task named '$taskName' was created.`nFor security reasons you have to specify run as account manually.`n" -ForegroundColor Yellow
 }
 
-Function CreateMPARRUsersTask
+function CreateMPARRUsersTask
 {
 	# MPARR-AzureADUsers script
     $taskName = "MPARR-MicrosoftEntraUsers"
+	
+	# Call function to set a folder for the task on Task Scheduler
+	$taskFolder = CreateScheduledTaskFolder
 	
 	# Task execution
     $validDays = 15
@@ -620,22 +683,25 @@ Function CreateMPARRUsersTask
     $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopOnIdleEnd -AllowStartIfOnBatteries `
          -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 1)
 
-    if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) 
+    if (Get-ScheduledTask -TaskName $taskName -TaskPath $taskFolder -ErrorAction SilentlyContinue) 
     {
         Write-Host "`nScheduled task named '$taskName' already exists.`n" -ForegroundColor Yellow
     }
     else 
     {
         Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings `
-        -RunLevel Highest -ErrorAction Stop | Out-Null
+        -RunLevel Highest -TaskPath $taskFolder -ErrorAction Stop | Out-Null
         Write-Host "`nScheduled task named '$taskName' was created.`nFor security reasons you have to specify run as account manually.`n" -ForegroundColor Yellow
     }
 }
 
-Function CreateMPARRDomainsTask
+function CreateMPARRDomainsTask
 {
 	# MPARR-AzureADDomains script
     $taskName = "MPARR-MicrosoftEntraDomains"
+	
+	# Call function to set a folder for the task on Task Scheduler
+	$taskFolder = CreateScheduledTaskFolder
 	
 	# Task execution
     $validDays = 30
@@ -660,22 +726,25 @@ Function CreateMPARRDomainsTask
     $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopOnIdleEnd -AllowStartIfOnBatteries `
          -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 1)
 
-    if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) 
+    if (Get-ScheduledTask -TaskName $taskName -TaskPath $taskFolder -ErrorAction SilentlyContinue) 
     {
         Write-Host "`nScheduled task named '$taskName' already exists.`n" -ForegroundColor Yellow
     }
     else 
     {
         Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings `
-        -RunLevel Highest -ErrorAction Stop | Out-Null
+        -RunLevel Highest -TaskPath $taskFolder -ErrorAction Stop | Out-Null
         Write-Host "`nScheduled task named '$taskName' was created.`nFor security reasons you have to specify run as account manually.`n" -ForegroundColor Yellow
     }
 }
 
-Function CreateMPARRRolesTask
+function CreateMPARRRolesTask
 {
 	# MPARR-AzureADRoles script
     $taskName = "MPARR-MicrosoftEntraRoles"
+	
+	# Call function to set a folder for the task on Task Scheduler
+	$taskFolder = CreateScheduledTaskFolder
 	
 	# Task execution
     $validDays = 7
@@ -700,24 +769,27 @@ Function CreateMPARRRolesTask
     $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopOnIdleEnd -AllowStartIfOnBatteries `
          -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 1)
 
-    if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) 
+    if (Get-ScheduledTask -TaskName $taskName -TaskPath $taskFolder -ErrorAction SilentlyContinue) 
     {
         Write-Host "`nScheduled task named '$taskName' already exists.`n" -ForegroundColor Yellow
     }
     else 
     {
         Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings `
-        -RunLevel Highest -ErrorAction Stop | Out-Null
+        -RunLevel Highest -TaskPath $taskFolder -ErrorAction Stop | Out-Null
         Write-Host "`nScheduled task named '$taskName' was created.`nFor security reasons you have to specify run as account manually.`n" -ForegroundColor Yellow
     }
 }
 
-Function CreateMPARRPurviewTask
+function CreateMPARRPurviewTask
 {
 	# Purview scripts for Sensitivity Labels and Sensitive Information Types
 	
 	# MPARR-LabelData.ps1 script
     $taskName = "MPARR-MicrosoftPurviewSensitivityLabel"
+	
+	# Call function to set a folder for the task on Task Scheduler
+	$taskFolder = CreateScheduledTaskFolder
 	
 	<#
 	.NOTES
@@ -754,20 +826,20 @@ Function CreateMPARRPurviewTask
     $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopOnIdleEnd -AllowStartIfOnBatteries `
          -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 1)
 
-    if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) 
+    if (Get-ScheduledTask -TaskName $taskName -TaskPath $taskFolder -ErrorAction SilentlyContinue) 
     {
         Write-Host "`nScheduled task named '$taskName' already exists.`n" -ForegroundColor Yellow
     }
     else 
     {
         Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings `
-        -RunLevel Highest -ErrorAction Stop | Out-Null
+        -RunLevel Highest -TaskPath $taskFolder -ErrorAction Stop | Out-Null
         Write-Host "`nScheduled task named '$taskName' was created.`nFor security reasons you have to specify run as account manually.`n" -ForegroundColor Yellow
     }
 	
 	# MPARR-SITData.ps1 script
     $taskName = "MPARR-MicrosoftPurviewSITs"
-    if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) 
+    if (Get-ScheduledTask -TaskName $taskName -TaskPath $taskFolder -ErrorAction SilentlyContinue) 
     {
         Write-Host "`nScheduled task named '$taskName' already exists.`n" -ForegroundColor Yellow
         return
@@ -778,11 +850,11 @@ Function CreateMPARRPurviewTask
     #$filePath = Join-Path $PSScriptRoot "MPARR-SITData.ps1"
     $action = New-ScheduledTaskAction -Execute "`"$PSHOME\pwsh.exe`"" -Argument ".\MPARR-SITData.ps1" -WorkingDirectory $PSScriptRoot
     Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings `
-        -RunLevel Highest -ErrorAction Stop | Out-Null
+        -RunLevel Highest -TaskPath $taskFolder -ErrorAction Stop | Out-Null
     Write-Host "`nScheduled task named '$taskName' was created.`nFor security reasons you have to specify run as account manually.`n" -ForegroundColor Yellow
 }
 
-Function SelfSignScripts
+function SelfSignScripts
 {
 	#Menu for self signed or use an own certificate
 	<#
@@ -844,7 +916,7 @@ Function SelfSignScripts
 	}
 }
 
-Function CreateCodeSigningCertificate
+function CreateCodeSigningCertificate
 {
 	#CMDLET to create certificate
 	$MPARRcert = New-SelfSignedCertificate -Subject "CN=MPARR PowerShell Code Signing Cert" -Type "CodeSigning" -CertStoreLocation "Cert:\CurrentUser\My" -HashAlgorithm "sha256"
@@ -986,3 +1058,37 @@ while ($choice -ne "0")
     }
 }
 
+
+# SIG # Begin signature block
+# MIIFywYJKoZIhvcNAQcCoIIFvDCCBbgCAQExDzANBglghkgBZQMEAgEFADB5Bgor
+# BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCAjbk7g0Be8Nu2t
+# CDkYOfFcfEcd6YxCWWycqbbv4DEKtKCCAy4wggMqMIICEqADAgECAhB8MX7WURZz
+# oUk0oHl+tjgEMA0GCSqGSIb3DQEBCwUAMC0xKzApBgNVBAMMIk1QQVJSIFBvd2Vy
+# U2hlbGwgQ29kZSBTaWduaW5nIENlcnQwHhcNMjMxMDAzMTgwMzM5WhcNMjQxMDAz
+# MTgyMzM5WjAtMSswKQYDVQQDDCJNUEFSUiBQb3dlclNoZWxsIENvZGUgU2lnbmlu
+# ZyBDZXJ0MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArWmYnHvTwJEQ
+# ngW83kd8amaIRXdv71HbAELzxySazNEwlOv2FnXfSH30crt6F/T/yVxoUiNnMSiW
+# RgA1Tuq8fzgsHr0TGaJf6Gk4DLA7lHwR4DqcpcQC60ozXFHWRXOUV3CtpQT4YLHY
+# XNZja2ur7ggHlBLXXJBd8FF/XquZnVOsm9AY2nCNqFJbYTsXtn7cih8D69ofuWJF
+# lNKy29k2zxJz+DLFYZyXisG99OoZec/yltUEBcI/QCJdOH3mFHIyc1SQwLizhXSu
+# S3DcEXHXipFQYNFLUy70od2x+xLYmZuC9/fyBfrW0Z0cr2QG+EIZZSkuu00RKt8x
+# 43LxY7V/5QIDAQABo0YwRDAOBgNVHQ8BAf8EBAMCB4AwEwYDVR0lBAwwCgYIKwYB
+# BQUHAwMwHQYDVR0OBBYEFIBjZhguAnGPEaqRwXSbTC572rOJMA0GCSqGSIb3DQEB
+# CwUAA4IBAQCfgML1Vyd1K4/CUI6xllqeL0viSzXXC18mpUPaHHyTbkUfUUI7GjoD
+# am0eQxqAHhQaJS262ki43yDlOJSXHgl+L6+fU+F/Ke8q96IOdM7DoI1oirZjSL3c
+# 2rNbYV7etYjsWfV1e3RX6zEjA9zvJA+rHAqvhICoHNIhP1KCMTVqxk0m/OY241ZF
+# wBhPNRae0jb1mNRWxdY6MBbFjpvxpMAluD9QDOw4C9EYClAvUp4jtgYzSRiFDOpP
+# ZgrVP3otUzae30Los2sJk4A46vfDxdL34xckI3KbMT0P62/nlhOLYhWr5oDP6Orq
+# necRwYcZ5Kyh8p1HvYIFr562xUCULr5VMYIB8zCCAe8CAQEwQTAtMSswKQYDVQQD
+# DCJNUEFSUiBQb3dlclNoZWxsIENvZGUgU2lnbmluZyBDZXJ0AhB8MX7WURZzoUk0
+# oHl+tjgEMA0GCWCGSAFlAwQCAQUAoIGEMBgGCisGAQQBgjcCAQwxCjAIoAKAAKEC
+# gAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGCNwIBCzEOMAwG
+# CisGAQQBgjcCARUwLwYJKoZIhvcNAQkEMSIEIP5a2xm1a3VyqWItYZ4LSadZldxn
+# cNsME7xpRwdHkXiEMA0GCSqGSIb3DQEBAQUABIIBAAaygnnSvK/DewhZw9K+Al9Q
+# kaAVBl5yjHV5LybVkGkMKNRy+Wa4QmWAcCX1jg41aZhaFrpgx4J0WSsQXwKoZdCs
+# c9ftO6mVo99xwEIEDHVp2vLRQryLWmOqvLOSXCUtilhL3jqRKKTrNNntj6pyjiCn
+# yEvxp0Y8DejbCIobJeZHdZKG1r47aq1Z8v542NQ/xzq5qbTEa6GiFRnC3lAPrcaf
+# nQoGfa5d7tRQDH0ZL7URsm7NB7xbz/WAOZ5cEbtz+zfqBTOphhAqMoIdAZFWwfct
+# AHrC4gjJv99jro56Hnvx3vNaW9U8xZYEnZUhjXoqD/BZSUy/VklwJeipyX6YkzI=
+# SIG # End signature block
