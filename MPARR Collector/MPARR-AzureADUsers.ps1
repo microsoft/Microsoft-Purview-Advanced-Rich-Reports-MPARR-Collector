@@ -25,13 +25,14 @@ HISTORY
 Script      : Get-AzureADData.ps1
 Author      : S. Zamorano
 Version     : 1.1.0
-Description : The script exports Azure AD users from Microsoft Graph and pushes into a customer-specified Log Analytics table. Please note if you change the name of the table - you need to update Workbook sample that displays the report , appropriately. Do ensure the older table is deleted before creating the new table - it will create duplicates and Log analytics workspace doesn't support upserts or updates.
+Description : The script exports Microsoft Entra users from Microsoft Graph and pushes into a customer-specified Log Analytics table. Please note if you change the name of the table - you need to update Workbook sample that displays the report , appropriately. Do ensure the older table is deleted before creating the new table - it will create duplicates and Log analytics workspace doesn't support upserts or updates.
 2022-10-12		S. Zamorano		- Added laconfig.json file for configuration and decryption function
 2022-10-18		G. Berdzik		- Fix licensing information
 2023-01-03		S. Zamorano		- Added Change to use beta API capabilities, added Id for users
 2023-03-31      G. Berdzik      - Support for large tenants
 2023-03-31		S. Zamorano		- Visual improvement for progress
-2023-02-10		S. Zamorano		- Fix Progress bar
+2023-10-02		S. Zamorano		- Fix Progress bar
+2023-10-24		S. Zamorano		- Added Microsoft Entra filter option
 #>
 
 
@@ -168,6 +169,36 @@ Function ProgressBar($TotalRows) {
 	}
 }
 
+Function SelectImportFilter{
+	
+	#This function is used to select the kind of filter for the users from MIcrosoft Entra ID
+	Write-Host "`nBy default this script import the data only from licensed users and as a members of Tenant, any other kind of users like as guest or unlicensed are not imported." -ForegroundColor Yellow
+	$choices  = '&Proceed', '&Change'
+	Write-Host "If you are ok with this you can select Proceed, if you want to download all users including guest and unlicensed users, please select Change." -ForegroundColor Yellow
+    $decision = $Host.UI.PromptForChoice("", "Default filter only members with licenses assigned. Do you want to Proceed or Change?", $choices, 0)
+    if ($decision -eq 1)
+    {
+        Write-Host "Importing all your users..." -ForegroundColor Green
+		Write-Host "Fetching data from Microsoft Entra ID..."
+		$body = @{
+        select='userPrincipalName,displayName,signInActivity,assignedLicenses,assignedPlans,city,createdDateTime,department,jobTitle,mail,officeLocation,userType'
+        count="true"
+		}
+		return $body
+    }elseif ($decision -eq 0)
+	{
+		Write-Host "Using the default filter to import your users" -ForegroundColor Green
+		Write-Host "Fetching data from Microsoft Entra ID..."
+        $body = @{
+		select='userPrincipalName,displayName,signInActivity,assignedLicenses,assignedPlans,city,createdDateTime,department,jobTitle,mail,officeLocation,userType'
+        filter="assignedLicenses/count ne 0 and userType eq 'Member'"
+        count="true"
+		}
+		return $body
+	}
+}
+
+
 Function Export-AzureADData() {
     # ---------------------------------------------------------------   
     #    Name           : Export-AzureADData
@@ -177,14 +208,10 @@ Function Export-AzureADData() {
     
     Connect-MgGraph -CertificateThumbPrint $CertificateThumb -AppID $AppClientID -TenantId $TenantGUID
     #Connect-MgGraph -Scopes 'User.Read.All', 'AuditLog.Read.All'  # for testing purposes only
-    #Select-MgProfile -Name "beta"
 
-    Write-Host "Fetching data from Azure AD..."
-    $body = @{
-        select='userPrincipalName,displayName,signInActivity,assignedLicenses,assignedPlans,city,createdDateTime,department,jobTitle,mail,officeLocation'
-        filter="assignedLicenses/count ne 0 and userType eq 'Member'"
-        count="true"
-    }
+	$body = SelectImportFilter
+
+    
     $headers = @{
         ConsistencyLevel="eventual"
     }
@@ -225,6 +252,7 @@ Function Export-AzureADData() {
                 CreateDateTime			= $user.CreateDateTime
                 LastAccess				= $user.SignInActivity.LastSignInDateTime
                 UserID					= $user.Id
+				userType				= $user.userType
             }
 
             [void]$usersAL.Add($newitem)
@@ -260,3 +288,36 @@ Function Export-AzureADData() {
      
 #Main Code - Run as required. Do ensure older table is deleted before creating the new table - as it will create duplicates.
 Export-AzureADData 
+# SIG # Begin signature block
+# MIIFywYJKoZIhvcNAQcCoIIFvDCCBbgCAQExDzANBglghkgBZQMEAgEFADB5Bgor
+# BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCBfb7YvJB+HQoFj
+# 3+wI6mRdi6WTxxB+ZMyVnfmOSorFKKCCAy4wggMqMIICEqADAgECAhB8MX7WURZz
+# oUk0oHl+tjgEMA0GCSqGSIb3DQEBCwUAMC0xKzApBgNVBAMMIk1QQVJSIFBvd2Vy
+# U2hlbGwgQ29kZSBTaWduaW5nIENlcnQwHhcNMjMxMDAzMTgwMzM5WhcNMjQxMDAz
+# MTgyMzM5WjAtMSswKQYDVQQDDCJNUEFSUiBQb3dlclNoZWxsIENvZGUgU2lnbmlu
+# ZyBDZXJ0MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArWmYnHvTwJEQ
+# ngW83kd8amaIRXdv71HbAELzxySazNEwlOv2FnXfSH30crt6F/T/yVxoUiNnMSiW
+# RgA1Tuq8fzgsHr0TGaJf6Gk4DLA7lHwR4DqcpcQC60ozXFHWRXOUV3CtpQT4YLHY
+# XNZja2ur7ggHlBLXXJBd8FF/XquZnVOsm9AY2nCNqFJbYTsXtn7cih8D69ofuWJF
+# lNKy29k2zxJz+DLFYZyXisG99OoZec/yltUEBcI/QCJdOH3mFHIyc1SQwLizhXSu
+# S3DcEXHXipFQYNFLUy70od2x+xLYmZuC9/fyBfrW0Z0cr2QG+EIZZSkuu00RKt8x
+# 43LxY7V/5QIDAQABo0YwRDAOBgNVHQ8BAf8EBAMCB4AwEwYDVR0lBAwwCgYIKwYB
+# BQUHAwMwHQYDVR0OBBYEFIBjZhguAnGPEaqRwXSbTC572rOJMA0GCSqGSIb3DQEB
+# CwUAA4IBAQCfgML1Vyd1K4/CUI6xllqeL0viSzXXC18mpUPaHHyTbkUfUUI7GjoD
+# am0eQxqAHhQaJS262ki43yDlOJSXHgl+L6+fU+F/Ke8q96IOdM7DoI1oirZjSL3c
+# 2rNbYV7etYjsWfV1e3RX6zEjA9zvJA+rHAqvhICoHNIhP1KCMTVqxk0m/OY241ZF
+# wBhPNRae0jb1mNRWxdY6MBbFjpvxpMAluD9QDOw4C9EYClAvUp4jtgYzSRiFDOpP
+# ZgrVP3otUzae30Los2sJk4A46vfDxdL34xckI3KbMT0P62/nlhOLYhWr5oDP6Orq
+# necRwYcZ5Kyh8p1HvYIFr562xUCULr5VMYIB8zCCAe8CAQEwQTAtMSswKQYDVQQD
+# DCJNUEFSUiBQb3dlclNoZWxsIENvZGUgU2lnbmluZyBDZXJ0AhB8MX7WURZzoUk0
+# oHl+tjgEMA0GCWCGSAFlAwQCAQUAoIGEMBgGCisGAQQBgjcCAQwxCjAIoAKAAKEC
+# gAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGCNwIBCzEOMAwG
+# CisGAQQBgjcCARUwLwYJKoZIhvcNAQkEMSIEILrSp87PAkm969DTO1O59j5wmICf
+# wdV9tXjw/gyt9Vm/MA0GCSqGSIb3DQEBAQUABIIBAI57l2yb9bK9AA/pyk41PezI
+# ncRx64//GXwtmV5XM/EN70+Jd9AWPjGAXF+bQnymVoab7QjhleGOdq1zYfvNbcFe
+# Sw+i+GGJWe7vD8vNIc2wa9brtx47Y+DuPc2tjXzG6w4U1qM4k7LLHZjhbRc+mdZp
+# s7XrhVf9W6nzx8wfaPJ+t52ccsARTurMk+defjbLbSWPfhYqySUImypok06k7IxK
+# XRxjNgmQVX3/WAysFf9NWPvvyF7IsQ2yyXE4EzAynpYi4IHXt7BfiO0rTdT4j8Eb
+# 31r9asyME3DJO6X36KJvyXCgGfSM0wG3/JnSFMeXT1t44nq8stnW29g0pGBCyNY=
+# SIG # End signature block
