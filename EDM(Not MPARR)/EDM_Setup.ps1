@@ -1170,7 +1170,7 @@ function SubMenuEDMGeneration
 		Write-Host "--- If you want to use another server to upload your data go back and select the next menu---" -ForegroundColor Blue
 		Write-Host "`t[5] - Upload Hash data"
 		Write-Host "`t[6] - EDM Hash Upload Status"
-		Write-Host "`t[7] - Crete task to create Hash files"
+		Write-Host "`t[7] - Create task to create Hash files"
 		Write-Host "`t[0] - Back to principal menu"
 		Write-Host "`n"
 		Write-Host "`nPlease choose option:"
