@@ -96,11 +96,14 @@ function InitializeHostName
     {
 		Write-Host "Working on remote host." -ForegroundColor Red
 		return
-	}elseif ($EDMHostName -eq "Localhost")
+	}else 
 	{
 		$json = Get-Content -Raw -Path $config
 		[PSCustomObject]$config = ConvertFrom-Json -InputObject $json
 		$EDMHostName = $config.EDMHostName
+	}
+	If ($EDMHostName -eq "Localhost")
+	{
 		$EDMHostName = hostname
 		$config.EDMHostName = $EDMHostName
 		WriteToJsonFile
@@ -195,8 +198,8 @@ function SelectEDMPaths
             Write-Host "`nEDM App folder set to '$($config.EDMAppFolder)'."
         }
 
-        # EDM data root folder
-        $folder.Description = "Select where the data for EDM will be located"
+        # EDM root folder
+        $folder.Description = "Select the root folder for EDM scripts"
         $folder.rootFolder = 'ProgramFiles'
         if ($folder.ShowDialog() -eq "OK")
         {
@@ -613,7 +616,7 @@ function InitializeEDMRemoteConfigFile
 		}
 	
 		$config = [ordered]@{
-		EncryptedKeys = "$($configfile.EncryptedKeys)"
+		EncryptedKeys = "False"
 		Password = "$($SharedKey)"
 		User = "$($configfile.User)"
 		HashFile = "$($configfile.HashFile)"
@@ -792,7 +795,7 @@ function CreateEDMRemoteHashUploadScheduledTask
 
     #create task
     $trigger = New-ScheduledTaskTrigger -Once -At $startTime -RepetitionInterval (New-TimeSpan -Days $validDays)
-    $action = New-ScheduledTaskAction -Execute "`"$PSHOME\pwsh.exe`"" -Argument ".\EDM_RemoteHashUpload.ps1" -WorkingDirectory $EDMSupportFolder
+    $action = New-ScheduledTaskAction -Execute "`"$PSHOME\pwsh.exe`"" -Argument ".\EDM_RemoteHashUpload.ps1" -WorkingDirectory $PSScriptRoot
     $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopOnIdleEnd -AllowStartIfOnBatteries `
          -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 1)
 
@@ -1291,9 +1294,18 @@ function SubMenuSupportingElements
 ############
 
 cls
-$config = InitializeEDMConfigFile
-InitializeHostName
-
+$configfile = "$PSScriptRoot\EDM_RemoteConfig.json"
+if (-not (Test-Path -Path $configfile))
+{
+	$config = "$PSScriptRoot\EDMConfig.json"
+	if (-not (Test-Path -Path $config))
+	{
+		$config = InitializeEDMConfigFile
+		WriteToJsonFile
+		Start-Sleep -s 1
+		InitializeHostName
+	}
+}
 Write-Host "`nRunning prerequisites check..."
 CheckPrerequisites
 
@@ -1305,6 +1317,7 @@ Write-Host "`n------------------------------------------------------------------
 ### Validate hostname
 $config = "$PSScriptRoot\EDMConfig.json"
 $config2 = "$PSScriptRoot\EDMConfig.json"
+
 if (-not (Test-Path -Path $config))
 {
 	$config = "$PSScriptRoot\EDM_RemoteConfig.json"
