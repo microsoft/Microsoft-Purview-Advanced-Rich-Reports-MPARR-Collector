@@ -24,15 +24,16 @@ SOFTWARE.
 HISTORY
 Script      : Get-AzureADData.ps1
 Author      : S. Zamorano
-Version     : 1.1.0
+Version     : 1.2.0
 Description : The script exports Microsoft Entra users from Microsoft Graph and pushes into a customer-specified Log Analytics table. Please note if you change the name of the table - you need to update Workbook sample that displays the report , appropriately. Do ensure the older table is deleted before creating the new table - it will create duplicates and Log analytics workspace doesn't support upserts or updates.
-2022-10-12		S. Zamorano		- Added laconfig.json file for configuration and decryption function
+2022-10-12		S. Zamorano		- Added laconfig.json file for configuration and decryption Function
 2022-10-18		G. Berdzik		- Fix licensing information
 2023-01-03		S. Zamorano		- Added Change to use beta API capabilities, added Id for users
 2023-03-31      G. Berdzik      - Support for large tenants
 2023-03-31		S. Zamorano		- Visual improvement for progress
 2023-10-02		S. Zamorano		- Fix Progress bar
 2023-10-24		S. Zamorano		- Added Microsoft Entra filter option
+2023-11-07		S. Zamorano		- Added attribute to skip decision and use as a task
 #>
 
 
@@ -43,7 +44,7 @@ param (
 )
 
 # Function to decrypt shared key
-function DecryptSharedKey 
+Function DecryptSharedKey 
 {
     param(
         [string] $encryptedKey
@@ -169,32 +170,141 @@ Function ProgressBar($TotalRows) {
 	}
 }
 
+Function InitializeLAConfigFile
+{
+	# read config file
+    $configfile = "$PSScriptRoot\laconfig.json" 
+	
+	if (-not (Test-Path -Path $configfile))
+    {
+		$config = [ordered]@{
+		EncryptedKeys =  "False"
+		AppClientID = ""
+		ClientSecretValue = ""
+		TenantGUID = ""
+		TenantDomain = ""
+		LA_CustomerID =  ""
+		LA_SharedKey =  ""
+		CertificateThumb = ""
+		OnmicrosoftURL = ""
+		RMSLogs = "c:\APILogs\RMSLogs\"
+		OutPutLogs = "c:\APILogs\"
+		Cloud = "Commercial"
+		MicrosoftEntraConfig = "Not Set"
+		}
+		return $config
+    }else
+	{
+		$json = Get-Content -Raw -Path $configfile
+		[PSCustomObject]$configfile = ConvertFrom-Json -InputObject $json
+	
+		$config = [ordered]@{
+		EncryptedKeys = "$($configfile.EncryptedKeys)"
+		AppClientID = "$($configfile.AppClientID)"
+		ClientSecretValue = "$($configfile.ClientSecretValue)"
+		TenantGUID = "$($configfile.TenantGUID)"
+		TenantDomain = "$($configfile.TenantDomain)"
+		LA_CustomerID = "$($configfile.LA_CustomerID)"
+		LA_SharedKey = "$($configfile.LA_SharedKey)"
+		CertificateThumb = "$($configfile.CertificateThumb)"
+		OnmicrosoftURL = "$($configfile.OnmicrosoftURL)"
+		RMSLogs = "$($configfile.RMSLogs)"
+		OutPutLogs = "$($configfile.OutPutLogs)"
+		Cloud = "$($configfile.Cloud)"
+		MicrosoftEntraConfig = "$($configfile.MicrosoftEntraConfig)"
+		}
+		return $config
+	}
+}
+
+Function WriteToJsonFile
+{
+	if (Test-Path "$PSScriptRoot\laconfig.json")
+    {
+        $date = Get-Date -Format "yyyyMMddHHmmss"
+        Move-Item "$PSScriptRoot\laconfig.json" "$PSScriptRoot\laconfig_$date.json"
+        Write-Host "`nThe old config file moved to 'laconfig_$date.json'"
+    }
+    $config | ConvertTo-Json | Out-File "$PSScriptRoot\laconfig.json"
+    Write-Host "Setup completed. New config file was created." -ForegroundColor Yellow
+}
+
 Function SelectImportFilter{
 	
-	#This function is used to select the kind of filter for the users from MIcrosoft Entra ID
-	Write-Host "`nBy default this script import the data only from licensed users and as a members of Tenant, any other kind of users like as guest or unlicensed are not imported." -ForegroundColor Yellow
-	$choices  = '&Proceed', '&Change'
-	Write-Host "If you are ok with this you can select Proceed, if you want to download all users including guest and unlicensed users, please select Change." -ForegroundColor Yellow
-    $decision = $Host.UI.PromptForChoice("", "Default filter only members with licenses assigned. Do you want to Proceed or Change?", $choices, 0)
-    if ($decision -eq 1)
-    {
-        Write-Host "Importing all your users..." -ForegroundColor Green
-		Write-Host "Fetching data from Microsoft Entra ID..."
-		$body = @{
-        select='userPrincipalName,displayName,signInActivity,assignedLicenses,assignedPlans,city,createdDateTime,department,jobTitle,mail,officeLocation,userType'
-        count="true"
-		}
-		return $body
-    }elseif ($decision -eq 0)
+	
+	$CONFIGFILE = "$PSScriptRoot\laconfig.json"
+	$json = Get-Content -Raw -Path $CONFIGFILE
+	[PSCustomObject]$config = ConvertFrom-Json -InputObject $json
+	$MicrosoftEntraConfig = $config.MicrosoftEntraConfig
+	
+	if($MicrosoftEntraConfig -eq $Null)
 	{
-		Write-Host "Using the default filter to import your users" -ForegroundColor Green
-		Write-Host "Fetching data from Microsoft Entra ID..."
-        $body = @{
-		select='userPrincipalName,displayName,signInActivity,assignedLicenses,assignedPlans,city,createdDateTime,department,jobTitle,mail,officeLocation,userType'
-        filter="assignedLicenses/count ne 0 and userType eq 'Member'"
-        count="true"
+		$config = InitializeLAConfigFile
+		$config.MicrosoftEntraConfig = "Not Set"
+		WriteToJsonFile
+	}
+	Start-Sleep -s 1
+	
+	$CONFIGFILE = "$PSScriptRoot\laconfig.json"
+	$json = Get-Content -Raw -Path $CONFIGFILE
+	[PSCustomObject]$config = ConvertFrom-Json -InputObject $json
+	$MicrosoftEntraConfig = $config.MicrosoftEntraConfig
+	
+	
+	if($MicrosoftEntraConfig -eq "Not Set")
+	{
+		#This Function is used to select the kind of filter for the users from MIcrosoft Entra ID
+		Write-Host "`n##########################################################################################" -ForegroundColor Blue
+		Write-Host "`nBy default this script import the data only from licensed users and as a members of Tenant, any other kind of users like as guest or unlicensed are not imported." -ForegroundColor Yellow
+		$choices  = '&Proceed', '&Change'
+		Write-Host "If you are ok with this you can select Proceed, if you want to download all users including guest and unlicensed users please select Change." -ForegroundColor Yellow
+		$decision = $Host.UI.PromptForChoice("", "Default filter only members with licenses assigned. Do you want to Proceed or Change?", $choices, 0)
+		if ($decision -eq 1)
+		{
+			Write-Host "Importing all your users..." -ForegroundColor Green
+			Write-Host "Fetching data from Microsoft Entra ID..."
+			$body = @{
+			select='userPrincipalName,displayName,signInActivity,assignedLicenses,assignedPlans,city,createdDateTime,department,jobTitle,mail,officeLocation,userType'
+			count="true"
+			}
+			$config.MicrosoftEntraConfig = "Total"
+			WriteToJsonFile
+			return $body
+		}elseif ($decision -eq 0)
+		{
+			Write-Host "Using the default filter to import your users" -ForegroundColor Green
+			Write-Host "Fetching data from Microsoft Entra ID..."
+			$body = @{
+			select='userPrincipalName,displayName,signInActivity,assignedLicenses,assignedPlans,city,createdDateTime,department,jobTitle,mail,officeLocation,userType'
+			filter="assignedLicenses/count ne 0 and userType eq 'Member'"
+			count="true"
+			}
+			$config.MicrosoftEntraConfig = "Filtered"
+			WriteToJsonFile
+			return $body
 		}
-		return $body
+	}else
+	{
+		if ($MicrosoftEntraConfig -eq "Total")
+		{
+			Write-Host "Importing all your users, including not licensed and guests..." -ForegroundColor Green
+			Write-Host "Fetching data from Microsoft Entra ID..."
+			$body = @{
+			select='userPrincipalName,displayName,signInActivity,assignedLicenses,assignedPlans,city,createdDateTime,department,jobTitle,mail,officeLocation,userType'
+			count="true"
+			}
+			return $body
+		}elseif ($MicrosoftEntraConfig -eq "Filtered")
+		{
+			Write-Host "Using the default filter to import your users" -ForegroundColor Green
+			Write-Host "Fetching data from Microsoft Entra ID..."
+			$body = @{
+			select='userPrincipalName,displayName,signInActivity,assignedLicenses,assignedPlans,city,createdDateTime,department,jobTitle,mail,officeLocation,userType'
+			filter="assignedLicenses/count ne 0 and userType eq 'Member'"
+			count="true"
+			}
+			return $body
+		}
 	}
 }
 
@@ -287,5 +397,4 @@ Function Export-AzureADData() {
 }
      
 #Main Code - Run as required. Do ensure older table is deleted before creating the new table - as it will create duplicates.
-Export-AzureADData 
-
+Export-AzureADData
