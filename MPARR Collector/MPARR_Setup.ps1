@@ -38,6 +38,7 @@ HISTORY
   2023-10-03	S.Zamorano	- Added digital signature for MPARR scripts
   2023-10-05	S.Zamorano	- Added comment in the configuration menu
   2023-10-20	S.Zamorano	- Folder selection added for Task Scheduler, permit to create or use existing.
+  2023-11-07	S.Zamorano	- Added new attribute used by MPARR_AzureADUsers.ps1 script (MicrosoftEntraConfig)
 #>
 
 #------------------------------------------------------------------------------  
@@ -185,7 +186,6 @@ function ReadNumber([int]$max, [string]$msg, [ref]$option)
     } until ($selection -ne 0)
     $option.Value = $selection
 }
-
 
 # Connect to Log Analtytics
 function SConnectToLA 
@@ -1006,6 +1006,7 @@ $config = [ordered]@{
 	RMSLogs = "c:\APILogs\RMSLogs\"
 	OutPutLogs = "c:\APILogs\"
     Cloud = "Commercial"
+	MicrosoftEntraConfig = "Not Set"
 }
 
 Write-Host "`nRunning prerequisites check..."
