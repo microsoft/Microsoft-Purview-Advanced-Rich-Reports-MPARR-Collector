@@ -11,7 +11,7 @@ And here it is:
 
 But, how to this kind information can be obtained?, because is not available under Microsoft Purview Audit(previously called Unified Audit Logs) or under Activity Explorer, happen that all the activities related to document protection are collected through the Azure RMS service and that information resides in another place.
 
-To collect that information we need to use MPARR_RMSData.psq script, this one permit to consume the data from another API, Azure RMS API, and put that same information in the same workspace in Logs Analytics, and that permit to merge and integrate all the data collected by MPARR.
+To collect that information we need to use MPARR_RMSData.ps1 script, this one permit to consume the data from another API, Azure RMS API, and put that same information in the same workspace in Logs Analytics, and that permit to merge and integrate all the data collected by MPARR.
 
 Next, we will explain how to this information is collected, and some considerations in this process.
 
