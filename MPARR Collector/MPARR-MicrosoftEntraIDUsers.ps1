@@ -407,22 +407,6 @@ Function Export-AzureADData() {
 
         foreach($user in $response.value) 
         {
-			<#$newitem = [PSCustomObject]@{    
-                UserPrincipalName		= $user.UserPrincipalName
-                DisplayName             = $user.DisplayName
-                City                    = $user.City
-                Country                 = $user.Country
-                Department              = $user.Department
-                JobTitle                = $user.JobTitle
-                Mail                    = $user.Mail
-                OfficeLocation          = $user.OfficeLocation
-                AssignedLicenses		= $user.AssignedLicenses
-                AssignedPlans			= $user.AssignedPlans
-                CreateDateTime			= $user.CreateDateTime
-                LastAccess				= $user.SignInActivity.LastSignInDateTime
-                UserID					= $user.Id
-				userType				= $user.userType
-            }#>
 			$newAttributeItem = @{}
 			foreach ($attribute in $AttributesArray)
 				{
