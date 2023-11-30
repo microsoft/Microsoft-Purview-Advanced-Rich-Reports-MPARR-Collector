@@ -370,7 +370,7 @@ Function Export-AzureADData() {
 
 	$body = SelectImportFilter
 	$DefaultAttributes = MicrosoftEntraIDAttributes
-	$DefaultAttributes = $DefaultAttributes -replace “.$”
+	$DefaultAttributes = $DefaultAttributes -replace ".$"
 	$AttributesArray = $DefaultAttributes.Split(",")
 	
 	Write-Host "`n################################################################################" -ForegroundColor DarkGreen
@@ -449,37 +449,3 @@ Function Export-AzureADData() {
 #Main Code - Run as required. Do ensure older table is deleted before creating the new table - as it will create duplicates.
 CheckPrerequisites
 Export-AzureADData
-
-# SIG # Begin signature block
-# MIIFywYJKoZIhvcNAQcCoIIFvDCCBbgCAQExDzANBglghkgBZQMEAgEFADB5Bgor
-# BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCAJK4Xz01pscxd0
-# 0c3alZlNBP1zkNvcGXT6RFw/Xguiw6CCAy4wggMqMIICEqADAgECAhB8MX7WURZz
-# oUk0oHl+tjgEMA0GCSqGSIb3DQEBCwUAMC0xKzApBgNVBAMMIk1QQVJSIFBvd2Vy
-# U2hlbGwgQ29kZSBTaWduaW5nIENlcnQwHhcNMjMxMDAzMTgwMzM5WhcNMjQxMDAz
-# MTgyMzM5WjAtMSswKQYDVQQDDCJNUEFSUiBQb3dlclNoZWxsIENvZGUgU2lnbmlu
-# ZyBDZXJ0MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArWmYnHvTwJEQ
-# ngW83kd8amaIRXdv71HbAELzxySazNEwlOv2FnXfSH30crt6F/T/yVxoUiNnMSiW
-# RgA1Tuq8fzgsHr0TGaJf6Gk4DLA7lHwR4DqcpcQC60ozXFHWRXOUV3CtpQT4YLHY
-# XNZja2ur7ggHlBLXXJBd8FF/XquZnVOsm9AY2nCNqFJbYTsXtn7cih8D69ofuWJF
-# lNKy29k2zxJz+DLFYZyXisG99OoZec/yltUEBcI/QCJdOH3mFHIyc1SQwLizhXSu
-# S3DcEXHXipFQYNFLUy70od2x+xLYmZuC9/fyBfrW0Z0cr2QG+EIZZSkuu00RKt8x
-# 43LxY7V/5QIDAQABo0YwRDAOBgNVHQ8BAf8EBAMCB4AwEwYDVR0lBAwwCgYIKwYB
-# BQUHAwMwHQYDVR0OBBYEFIBjZhguAnGPEaqRwXSbTC572rOJMA0GCSqGSIb3DQEB
-# CwUAA4IBAQCfgML1Vyd1K4/CUI6xllqeL0viSzXXC18mpUPaHHyTbkUfUUI7GjoD
-# am0eQxqAHhQaJS262ki43yDlOJSXHgl+L6+fU+F/Ke8q96IOdM7DoI1oirZjSL3c
-# 2rNbYV7etYjsWfV1e3RX6zEjA9zvJA+rHAqvhICoHNIhP1KCMTVqxk0m/OY241ZF
-# wBhPNRae0jb1mNRWxdY6MBbFjpvxpMAluD9QDOw4C9EYClAvUp4jtgYzSRiFDOpP
-# ZgrVP3otUzae30Los2sJk4A46vfDxdL34xckI3KbMT0P62/nlhOLYhWr5oDP6Orq
-# necRwYcZ5Kyh8p1HvYIFr562xUCULr5VMYIB8zCCAe8CAQEwQTAtMSswKQYDVQQD
-# DCJNUEFSUiBQb3dlclNoZWxsIENvZGUgU2lnbmluZyBDZXJ0AhB8MX7WURZzoUk0
-# oHl+tjgEMA0GCWCGSAFlAwQCAQUAoIGEMBgGCisGAQQBgjcCAQwxCjAIoAKAAKEC
-# gAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGCNwIBCzEOMAwG
-# CisGAQQBgjcCARUwLwYJKoZIhvcNAQkEMSIEIKpXq+/RtO2XoQ9Ya7hjmol+zC0c
-# WokdkkHsovawX+qXMA0GCSqGSIb3DQEBAQUABIIBAEHN8EqNo+MvcbuElRjCysK3
-# phs1lH0q3jbMhk/TWOAyDkc872tiD8MiqcqMBYgzib8/FvmBJZrcnH8+rRZ6GzCZ
-# GBvoIhW0/900R4x3bno59jiSc05yJlkrhxNAUeL/zx8hPf5zPn8l33IY7H18xiJT
-# 60XV7Mx4y0LjWmma5hEyvQCj4BPWCY2fIOjNn0It+tQQaSzmgTOQ9z4BnRfEHbdh
-# Ws+/10lKkVEZwjvWcsMSIcf7b89dVCqavYPB+xzX602JO5KMBt7WXTD8huaA9YnN
-# NMw7l1Xm6uFmHuOy3kuIwR9kBYh05OkzbERXOlQXZ1zS+De0lkXVxx/mb24AIGw=
-# SIG # End signature block
