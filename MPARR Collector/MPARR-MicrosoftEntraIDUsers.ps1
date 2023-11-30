@@ -22,9 +22,9 @@ SOFTWARE.
 
 <#
 HISTORY
-Script      : Get-AzureADData.ps1
+Script      : MPARR_MicrosoftEntraIDUsers.ps1
 Author      : S. Zamorano
-Version     : 1.2.0
+Version     : 1.3.0
 Description : The script exports Microsoft Entra users from Microsoft Graph and pushes into a customer-specified Log Analytics table. Please note if you change the name of the table - you need to update Workbook sample that displays the report , appropriately. Do ensure the older table is deleted before creating the new table - it will create duplicates and Log analytics workspace doesn't support upserts or updates.
 2022-10-12		S. Zamorano		- Added laconfig.json file for configuration and decryption Function
 2022-10-18		G. Berdzik		- Fix licensing information
@@ -35,13 +35,16 @@ Description : The script exports Microsoft Entra users from Microsoft Graph and 
 2023-10-24		S. Zamorano		- Added Microsoft Entra filter option
 2023-11-07		S. Zamorano		- Added attribute to skip decision and use as a task
 2023-11-27		S. Zamorano		- Added Microsoft_EntraIDUsers.json file to select the Attributes required per user, added function PowerShell version check
+2023-11-29		S. Zamorano		- Added ExportToFileOnly option
 #>
 
-
+[CmdletBinding(DefaultParameterSetName = "None")]
 param (
+	#Parameter to export to file only
+	[Parameter()] 
+		[switch]$ExportToFileOnly,
     # Log Analytics table where the data is written to. Log Analytics will add an _CL to this name.
     [string]$TableName = "AzureADUsers"
-
 )
 
 function CheckPowerShellVersion
@@ -253,7 +256,7 @@ Function MicrosoftEntraIDAttributes
 {
 	$EntraAttributes = "$PSScriptRoot\MPARR_EntraIDUsers.json"
 	
-	$DefaultAttributes = "userPrincipalName,displayName,signInActivity,assignedLicenses,assignedPlans,city,createdDateTime,department,jobTitle,mail,officeLocation,userType"
+	$DefaultAttributes = "userPrincipalName,displayName,signInActivity,assignedLicenses,assignedPlans,city,createdDateTime,department,jobTitle,mail,officeLocation,userType,"
 	
 	if (-not (Test-Path -Path $EntraAttributes))
 	{
@@ -279,7 +282,6 @@ Function MicrosoftEntraIDAttributes
 }
 
 Function SelectImportFilter{
-	
 	
 	$CONFIGFILE = "$PSScriptRoot\laconfig.json"
 	$json = Get-Content -Raw -Path $CONFIGFILE
@@ -393,57 +395,73 @@ Function Export-AzureADData() {
 	$stop = $false
 	$Progress = 0
 	$perc = 0
+	$JSONfilename = "MicrosoftEntraIDUsers.json"
 
     $response = Invoke-MgGraphRequest -Method Get -Uri "https://graph.microsoft.com/v1.0/users" -Body $body -Headers $headers
 	$TotalRows = $response["@odata.count"]
     Write-Host "Total number of records found: $($response["@odata.count"])." 
-	ProgressBar
-    do
-    {
-		$Progress += $ProgressValue
-		$perc = $Progress/$TotalRows
-		Write-Progress -Activity "Data received. Processing page no. [$page]" -PercentComplete $perc
-		$page++
+	
+	if ($ExportToFileOnly)
+	{
+		Out-File -FilePath $JSONfilename
+		foreach($user in $response.value) 
+			{
+				$response.value | ConvertTo-Json -Depth 100 | Add-Content -Encoding UTF8 $JSONfilename
+			}
+		Write-host -ForegroundColor Cyan "---> Exporting log data to '" -NoNewline
+		Write-Host -ForegroundColor White -BackgroundColor DarkGray $JSONfilename -NoNewline
+		Write-Host -ForegroundColor Cyan "': " -NoNewline
+		Write-Host "`nTotal records copied: '$($TotalRows)'"
+	}else
+	{
+		ProgressBar
+		do
+		{
+			$Progress += $ProgressValue
+			$perc = $Progress/$TotalRows
+			Write-Progress -Activity "Data received. Processing page no. [$page]" -PercentComplete $perc
+			$page++
 
-        foreach($user in $response.value) 
-        {
-			$newAttributeItem = @{}
-			foreach ($attribute in $AttributesArray)
+			foreach($user in $response.value) 
+			{
+				$newAttributeItem = @{}
+				foreach ($attribute in $AttributesArray)
+					{
+						$newAttributeItem[$attribute] = $user.$attribute
+						#Write-Host "'$($user.$attribute)'"
+					}
+				$newItem = [PSCustomObject]$newAttributeItem
+
+				[void]$usersAL.Add($newitem)
+				$size += [System.Text.Encoding]::UTF8.GetByteCount(($newitem | ConvertTo-Json -Depth 100))
+				if ($size -gt $bufferSize)
 				{
-					$newAttributeItem[$attribute] = $user.$attribute
-					#Write-Host "'$($user.$attribute)'"
+					$log_analytics_array = $usersAL.ToArray()
+					Post-LogAnalyticsData -LogAnalyticsTableName $TableName -body $log_analytics_array
+					$log_analytics_array = $null
+					$usersAL.Clear()
+					$size = 0
 				}
-			$newItem = [PSCustomObject]$newAttributeItem
+			}
+			if ($response["@odata.nextLink"] -ne $null)
+			{
+				$response = Invoke-MgGraphRequest -Method Get -Uri $response["@odata.nextLink"] #-Body $body -Headers $headers
+			}
+			else 
+			{
+				$stop = $true
+				Write-Host "   Work completed!!! $TotalRows elements imported to Logs Analytics" -ForegroundColor Green
+			} 
 
-            [void]$usersAL.Add($newitem)
-            $size += [System.Text.Encoding]::UTF8.GetByteCount(($newitem | ConvertTo-Json -Depth 100))
-            if ($size -gt $bufferSize)
-            {
-                $log_analytics_array = $usersAL.ToArray()
-                Post-LogAnalyticsData -LogAnalyticsTableName $TableName -body $log_analytics_array
-                $log_analytics_array = $null
-                $usersAL.Clear()
-                $size = 0
-            }
-        }
-        if ($response["@odata.nextLink"] -ne $null)
-        {
-            $response = Invoke-MgGraphRequest -Method Get -Uri $response["@odata.nextLink"] #-Body $body -Headers $headers
-        }
-        else 
-        {
-            $stop = $true
-			Write-Host "   Work completed!!! $TotalRows elements imported to Logs Analytics" -ForegroundColor Green
-        } 
+		} while (-not $stop)
 
-    } while (-not $stop)
-
-    # Push remaining data to Log Analytics
-    if ($usersAL.Count -gt 0)
-    {
-        $log_analytics_array = $usersAL.ToArray()
-		Post-LogAnalyticsData -LogAnalyticsTableName $TableName -body $log_analytics_array			
-    }
+		# Push remaining data to Log Analytics
+		if ($usersAL.Count -gt 0)
+		{
+			$log_analytics_array = $usersAL.ToArray()
+			Post-LogAnalyticsData -LogAnalyticsTableName $TableName -body $log_analytics_array			
+		}
+	}
 }
      
 #Main Code - Run as required. Do ensure older table is deleted before creating the new table - as it will create duplicates.
