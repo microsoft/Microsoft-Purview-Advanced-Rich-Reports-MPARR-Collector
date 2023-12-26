@@ -28,7 +28,17 @@ Date		: 22-12-2023
 Description : The script exports Content Explorer from Export-ContentExplorerData and pushes into a customer-specified Log Analytics table. 
 			Please note if you change the name of the table - you need to update Workbook sample that displays the report , appropriately. 
 			Do ensure the older table is deleted before creating the new table - it will create duplicates and Log analytics workspace doesn't support upserts or updates.
+			
+.NOTES 
+	22-12-2023	S. Zamorano		- First released
+	26-12-2023	S. Zamorano		- Added functions to support list of SITs, list of Trainable Classifiers and capability to set Page Size
 #>
+
+[CmdletBinding(DefaultParameterSetName = "None")]
+param(
+    [Parameter()] 
+        [switch]$ChangePageSize
+)
 
 function CheckPowerShellVersion
 {
@@ -135,6 +145,7 @@ function ReadTagType
 function GetSensitivityLabelList
 {
 	Write-Host "`nGetting Sensitivity Labels..." -ForegroundColor Green
+	Write-Host "`nThe list can be long, check your PowerShell buffer and set at least on 500." -ForeGroundColor DarkYellow
 	$SensitivityLabels = Get-Label | select DisplayName,ParentLabelDisplayName
 	$ListSensitivityLabels = @()
 	
@@ -171,6 +182,7 @@ function GetSensitivityLabelList
 function GetRetentionLabelList
 {
 	Write-Host "`nGetting Retention Labels..." -ForegroundColor Green
+	Write-Host "`nThe list can be long, check your PowerShell buffer and set at least on 500." -ForeGroundColor DarkYellow
 	$RetentionLabels = Get-ComplianceTag | select Name
 	$ListRetentionLabels = @()
 	
@@ -200,17 +212,118 @@ function GetRetentionLabelList
 
 function GetSensitiveInformationType
 {
-	$SIT = Read-Host "`nPlease enter the Sensitive Information Type name that will be used in your query "
-	return $SIT
+	$choices  = '&Enter Name','&Select from a list'
+	$decision = $Host.UI.PromptForChoice("", "`nPlease, select how to you want identify the Sensitive Information Type to be used in your query", $choices, 0)
+	if ($decision -eq 0)
+    {
+		$SIT = Read-Host "`nPlease enter the Sensitive Information Type name that will be used in your query "
+		return $SIT
+	}
+	if ($decision -eq 1)
+    {
+	
+		Write-Host "`nGetting Sensitive Information Types..." -ForegroundColor Green
+		Write-Host "`nThe list can be long, check your PowerShell buffer and set at least on 500." -ForeGroundColor DarkYellow
+		$SITs = Get-DlpSensitiveInformationType | select Name
+		$SITlist = @()
+		
+		foreach($SITd in $SITs)
+		{
+			$SITlist += $SITd.Name
+		}
+		
+		$tempFolder = $SITlist
+		$SITSelection = @()
+		
+		foreach ($SITd in $tempFolder){$SITSelection += @([pscustomobject]@{Name=$SITd})}
+		
+		$i = 1
+		$SITSelection = @($SITSelection| ForEach-Object {$_ | Add-Member -Name "No" -MemberType NoteProperty -Value ($i++) -PassThru})
+		
+		#List all SITs
+		$SITSelection | Select-Object No, Name | Out-Host
+		
+		# Select Sensitive Information Type
+		$selection = 0
+		ReadNumber -max ($i -1) -msg "Enter number corresponding to the Sensitive Information Type name" -option ([ref]$selection)
+		$SIT = $SITSelection[$selection - 1].Name
+		
+		return $SIT
+	}
 }
 
 function GetTrainableClassifiers
 {
-	$TC = Read-Host "`nPlease enter the Trainable Classifier name that will be used in your query "
-	return $TC
+	$choices  = '&Enter Name','&Select from a list'
+	$decision = $Host.UI.PromptForChoice("", "`nPlease, select how to you want identify the Trainable Classifier to be used in your query", $choices, 0)
+	if ($decision -eq 0)
+    {
+		$TC = Read-Host "`nPlease enter the Trainable Classifier name that will be used in your query "
+		return $TC
+	}
+	if ($decision -eq 1)
+    {
+		$TCSelected = "$PSScriptRoot\MPARR-TrainableClassifiersList.json"
+		
+		if (-not (Test-Path -Path $TCSelected))
+		{
+			Write-Host "`nThe file MPARR_TrainableClassifiersList.json is missing at $PSScriptRoot." -ForeGroundColor DarkYellow
+			Write-Host "You can found it in the GitHub site at https://aka.ms/MPARR-GitHub"
+			GetTrainableClassifiers
+		}else
+		{
+			Write-Host "`nGetting Trainable Classifiers..." -ForegroundColor Green
+			Write-Host "`nThe list can be long, check your PowerShell buffer and set at least on 500." -ForeGroundColor DarkYellow
+			
+			$json = Get-Content -Raw -Path $TCSelected
+			[PSCustomObject]$tcs = ConvertFrom-Json -InputObject $json
+			$TClist = @()
+			
+			foreach ($tcd in $tcs.psobject.Properties)
+			{
+				if ($tcs."$($tcd.Name)" -eq "True")
+				{
+					$TClist += $tcd.Name
+				}
+			}
+			
+			$tempFolder = $TClist
+			$TCSelection = @()
+			
+			foreach ($tcd in $tempFolder){$TCSelection += @([pscustomobject]@{Name=$tcd})}
+			
+			$i = 1
+			$TCSelection = @($TCSelection| ForEach-Object {$_ | Add-Member -Name "No" -MemberType NoteProperty -Value ($i++) -PassThru})
+			
+			#List all Trainable classifiers
+			$TCSelection | Select-Object No, Name | Out-Host
+			
+			# Select Trainable Classifier
+			$selection = 0
+			ReadNumber -max ($i -1) -msg "Enter number corresponding to the Trainable Classifier name" -option ([ref]$selection)
+			$TC = $TCSelection[$selection - 1].Name
+			
+			return $TC
+		}
+	}
 }
 
-function CollectData($TagType, $Workload)
+function ExportPageSize($PageSize)
+{
+	$Size = $PageSize
+
+	$choices  = '&Yes', '&No'
+    $decision = $Host.UI.PromptForChoice("", "`nThe default Page Size used in your query is: '$($Size)', do you want to change?", $choices, 0)
+    if ($decision -eq 0)
+    {
+        ReadNumber -max 5000 -msg "Enter a page size number (Between 1 to 5000)." -option ([ref]$Size)
+		return $Size
+    }
+	
+	return $Size
+}
+
+function CollectData($TagType, $Workload, $PageSize)
 {
 	
 	#Step 1: Collect all the variables	
@@ -240,16 +353,16 @@ function CollectData($TagType, $Workload)
 	}
 	
 	# Set the default configuration for Export-ContentExplorer
-    $PageSize = 50
+    $PageSize = $PageSize
 	
 	#Step 2: Show the configuration set
 	cls
 	Write-Host "`n#################################################################################"
 	Write-Host "`t`t`tConfiguration Set:"
 	Write-Host "`nTag Types selected:" -NoNewLine
-		Write-Host "`t`t"$TagType -ForegroundColor Green
+		Write-Host "`t`t`t"$TagType -ForegroundColor Green
 	Write-Host "Workloads selected:" -NoNewLine
-		Write-Host "`t`t"$Workload -ForegroundColor Green
+		Write-Host "`t`t`t"$Workload -ForegroundColor Green
 	if($TagType -contains 'SensitiveInformationType')
 	{
 		Write-Host "Sensitive Information Type selected:" -NoNewLine
@@ -258,20 +371,20 @@ function CollectData($TagType, $Workload)
 	if($TagType -contains 'Sensitivity')
 	{
 		Write-Host "Sensitivity Labels selected:" -NoNewLine
-		Write-Host "`t'$($SensitivityLabels)' " -ForegroundColor Green
+		Write-Host "`t`t'$($SensitivityLabels)' " -ForegroundColor Green
 	}
 	if($TagType -contains 'Retention')
 	{
 		Write-Host "Retention Labels selected:" -NoNewLine
-		Write-Host "`t'$($RetentionLabels)' " -ForegroundColor Green
+		Write-Host "`t`t'$($RetentionLabels)' " -ForegroundColor Green
 	}
 	if($TagType -contains 'TrainableClassifier')
 	{
 		Write-Host "Trainable Classifier selected:" -NoNewLine
-		Write-Host "`t'$($TrainableClassifiers)' " -ForegroundColor Green
+		Write-Host "`t`t'$($TrainableClassifiers)' " -ForegroundColor Green
 	}
 	Write-Host "Page size set:" -NoNewLine
-		Write-Host "`t`t`t"$PageSize -ForegroundColor Green
+		Write-Host "`t`t`t`t"$PageSize -ForegroundColor Green
 	Write-Host "`n#################################################################################"
 	
 	$date = Get-Date -Format "yyyyMMddHHmmss"
@@ -297,10 +410,13 @@ function CollectData($TagType, $Workload)
 		Write-Host -NoNewLine "`nPress any key to continue..."
 		$null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
 		MainFunction
+	}else
+	{
+		Write-Host "Total matches returned :" -NoNewLine
+		Write-Host $remaining -ForeGroundColor Green	
 	}
 	
-	Write-Host "Total matches returned :" -NoNewLine
-	Write-Host $remaining -ForeGroundColor Green
+
 
 	While ($query[0].MorePagesAvailable -eq 'True') {
 		$CEResults += $query[1..$var]
@@ -328,9 +444,10 @@ function SelectContinuity
 	if ($decision -eq 0)
     {
 		MainFunction
-	}else
+	}
+	if ($decision -eq 1)
 	{
-		return
+		exit
 	}
 	
 }
@@ -363,10 +480,17 @@ function MainFunction()
 		$TagType = ReadTagType
 		
 		#Read workloads to be used with Export-ContentExplorerData
-		$Workload = ReadWorkload		
+		$Workload = ReadWorkload	
+
+		#PageSize to be used
+		$Size = 50
+		if($ChangePageSize)
+		{
+			$Size = ExportPageSize -PageSize $Size
+		}
 
 		#Execute the query
-		CollectData -TagType $TagType -Workload $Workload
+		CollectData -TagType $TagType -Workload $Workload -PageSize $Size
 		
 		#Check if you want to finish or request a new export
 		SelectContinuity
