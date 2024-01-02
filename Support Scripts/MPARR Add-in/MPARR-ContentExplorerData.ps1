@@ -475,7 +475,8 @@ function ExportToJsonFiles
 	#Create Json for Sensitive Information Types
 	$results = @()
 	$results = Get-DlpSensitiveInformationType | select Name
-	$SortedResults = $results | Sort-Object -Unique
+	$SortedResults = $results | Sort-Object -Property Name -Unique
+	Start-Sleep -s 1
 	Write-Host "`nTotal Sensitive Information Types found it :" -NoNewLine
 	Write-Host "`t" $SortedResults.count -ForeGroundColor Green
 	$ArraySIT = @{}
@@ -1064,6 +1065,13 @@ function CollectData($TagType, $Workload, $PageSize, $ReadExport)
 		Write-Host "Page size set:" -NoNewLine
 			Write-Host "`t`t`t`t"$PageSize -ForegroundColor Green
 		Write-Host "`n#################################################################################"
+		
+		$ExportPath = $PSScriptRoot+"\ContentExplorerExport"
+		if(-Not (Test-Path $ExportPath ))
+		{
+			Write-Host "Export data directory is missing, creating a new folder called ContentExplorerExport"
+			New-Item -ItemType Directory -Force -Path "$PSScriptRoot\ContentExplorerExport" | Out-Null
+		}
 		
 		ExecuteExportCmdlet -TagType $TagType -Workload $Workload -Tag $tagname -PageSize $PageSize
 	}else
