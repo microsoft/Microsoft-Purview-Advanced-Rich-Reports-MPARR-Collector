@@ -23,7 +23,7 @@ HISTORY
 Script      : MPARR-ContentExplorerData-BasicReturn.ps1
 Author      : Sebastian Zamorano
 Co-Author   : 
-Version     : 2.0.0
+Version     : 2.0.1
 Date		: 22-12-2023
 Description : The script exports Content Explorer from Export-ContentExplorerData and pushes into a customer-specified Log Analytics table. 
 			Please note if you change the name of the table - you need to update Workbook sample that displays the report , appropriately. 
@@ -33,6 +33,7 @@ Description : The script exports Content Explorer from Export-ContentExplorerDat
 	26-12-2023	S. Zamorano		- MPARR-ContentExplorerData-BasicReturn.ps1 used as base
 	26-12-2023	S. Zamorano		- Added Tablename, Export 2 file only, export to Logs analytics, configuration files.
 	29-12-2023	S. Zamorano		- First Release
+	02-01-2024  S. Zamorano		- Columns added to the results, TagType and TagName for Logs Analytics, to improve the reports on Power BI
 #>
 
 [CmdletBinding(DefaultParameterSetName = "None")]
@@ -868,10 +869,9 @@ function ExecuteExportCmdlet($TagType, $Workload, $Tag, $PageSize)
 		$TotalExported += ($query.count - 1)
 	}
 
-	if ($remaining -gt 0)
+	if ($query.count -gt 0)
 	{
 		$CEResults += $query[1..$remaining]
-		$query = Export-ContentExplorerData -TagType $TagType -TagName $tag -PageSize $PageSize -Workload $Workload -PageCookie $query[0].PageCookie 
 		$TotalExported += ($query.count - 1)
 	}
 	
@@ -903,6 +903,15 @@ function ExportDataToLogsAnalytics($TagType, $Workload, $Tag, $PageSize)
 	$ErrorExportArray = @()
 	$SummaryExportArray = @()
 	
+	#Add additional columns to simplify reports
+	$i = 1
+	While($i -lt $var)
+	{
+		$query[$i] | Add-Member -MemberType NoteProperty -Name 'TagType' -Value $TagType
+		$query[$i] | Add-Member -MemberType NoteProperty -Name 'TagName' -Value $tag
+		$i++
+	}
+	
 	if($Total -eq 0)
 	{
 		$path2 = $PSScriptRoot+"\ContentExplorerExport\"+$ExportError
@@ -920,17 +929,22 @@ function ExportDataToLogsAnalytics($TagType, $Workload, $Tag, $PageSize)
 	While ($query[0].MorePagesAvailable -eq 'True') {
 		$CEResults += $query[1..$var]
 		$query = Export-ContentExplorerData -TagType $TagType -TagName $tag -PageSize $PageSize -Workload $Workload -PageCookie $query[0].PageCookie 
+		$i = 1
+		While($i -lt $query.count)
+		{
+			$query[$i] | Add-Member -MemberType NoteProperty -Name 'TagType' -Value $TagType
+			$query[$i] | Add-Member -MemberType NoteProperty -Name 'TagName' -Value $tag
+			$i++
+		}
 		$remaining -= ($var - 1)
 		Write-Host "Total matches remaining to process :" -NoNewLine
 		Write-Host $remaining -ForeGroundColor Green
 		$TotalExported += ($query.count - 1)
 	}
 
-	if ($remaining -gt 0)
+	if ($query.count -gt 0)
 	{
 		$CEResults += $query[1..$remaining]
-		$query = Export-ContentExplorerData -TagType $TagType -TagName $tag -PageSize $PageSize -Workload $Workload -PageCookie $query[0].PageCookie 
-		$TotalExported += ($query.count - 1)
 	}
 
 	# Push data to Log Analytics
@@ -941,7 +955,6 @@ function ExportDataToLogsAnalytics($TagType, $Workload, $Tag, $PageSize)
         $log_analytics_array = @()            
         foreach($i in $CEResults) 
 		{
-            $i | Add-Member -MemberType NoteProperty -Name $TagType -Value ($item.CreationTime) 
 			$log_analytics_array += $i
         }    
 
@@ -954,7 +967,6 @@ function ExportDataToLogsAnalytics($TagType, $Workload, $Tag, $PageSize)
         $log_analytics_array = @()            
         foreach($i in $CEResults) 
 		{
-            $i | Add-Member -MemberType NoteProperty -Name $TagType -Value ($item.CreationTime) 
 			$log_analytics_array += $i
         }    
 
@@ -967,7 +979,6 @@ function ExportDataToLogsAnalytics($TagType, $Workload, $Tag, $PageSize)
         $log_analytics_array = @()            
         foreach($i in $CEResults) 
 		{
-            $i | Add-Member -MemberType NoteProperty -Name $TagType -Value ($item.CreationTime) 
 			$log_analytics_array += $i
         }    
 
@@ -980,7 +991,6 @@ function ExportDataToLogsAnalytics($TagType, $Workload, $Tag, $PageSize)
         $log_analytics_array = @()            
         foreach($i in $CEResults) 
 		{
-            $i | Add-Member -MemberType NoteProperty -Name $TagType -Value ($item.CreationTime) 
 			$log_analytics_array += $i
         }    
 
