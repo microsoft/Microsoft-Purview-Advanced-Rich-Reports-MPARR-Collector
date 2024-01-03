@@ -23,7 +23,7 @@ HISTORY
 Script      : MPARR-ContentExplorerData-BasicReturn.ps1
 Author      : Sebastian Zamorano
 Co-Author   : 
-Version     : 2.0.1
+Version     : 2.0.2
 Date		: 22-12-2023
 Description : The script exports Content Explorer from Export-ContentExplorerData and pushes into a customer-specified Log Analytics table. 
 			Please note if you change the name of the table - you need to update Workbook sample that displays the report , appropriately. 
@@ -34,6 +34,7 @@ Description : The script exports Content Explorer from Export-ContentExplorerDat
 	26-12-2023	S. Zamorano		- Added Tablename, Export 2 file only, export to Logs analytics, configuration files.
 	29-12-2023	S. Zamorano		- First Release
 	02-01-2024  S. Zamorano		- Columns added to the results, TagType and TagName for Logs Analytics, to improve the reports on Power BI
+	03-01-2024	S. Zamorano		- Organize the Json files in alphabetical order, my thanks to G. Berdzik
 #>
 
 [CmdletBinding(DefaultParameterSetName = "None")]
@@ -455,16 +456,17 @@ function ExportToJsonFiles
 	
 	$tempFolder = $ListSensitivityLabels
 	$results = @()
+	$SortedResults = @()
 	
 	foreach ($label in $tempFolder){$results += @([pscustomobject]@{Name=$label})}
 	Write-Host "`nTotal Sensitivity Labels found it :" -NoNewLine
 	Write-Host "`t" $results.count -ForeGroundColor Green
-	$ArraySL = @{}
+	$SortedResults = $results | Sort-Object -Property Name -Unique
+	
+	$ArraySL = [ordered]@{}
 	foreach($result in $results)
 	{
-		$ArraySL += @{
-			$result.Name = "True"
-		}
+		$ArraySL[$result.Name] = "True"
 	}
 	$ExportSL = "MPARR-SensitivityLabelsList.json"
 	$pathSL = $PSScriptRoot+"\ConfigFiles\"+$ExportSL
@@ -474,17 +476,16 @@ function ExportToJsonFiles
 	
 	#Create Json for Sensitive Information Types
 	$results = @()
+	$SortedResults = @()
 	$results = Get-DlpSensitiveInformationType | select Name
 	$SortedResults = $results | Sort-Object -Property Name -Unique
 	Start-Sleep -s 1
 	Write-Host "`nTotal Sensitive Information Types found it :" -NoNewLine
 	Write-Host "`t" $SortedResults.count -ForeGroundColor Green
-	$ArraySIT = @{}
+	$ArraySIT = [ordered]@{}
 	foreach($result in $SortedResults)
 	{
-		$ArraySIT += @{
-			$result.Name = "True"
-		}
+		$ArraySIT[$result.Name] = "True"
 	}
 	$ExportSIT = "MPARR-SensitiveInfoTypesList.json"
 	$pathSIT = $PSScriptRoot+"\ConfigFiles\"+$ExportSIT
@@ -494,15 +495,15 @@ function ExportToJsonFiles
 	
 	#Create Json for Retention Labels
 	$results = @()
+	$SortedResults = @()
 	$results = Get-ComplianceTag | select Name
+	$SortedResults = $results | Sort-Object -Property Name -Unique
 	Write-Host "`nTotal Retention Labels found it :" -NoNewLine
-	Write-Host "`t" $results.count -ForeGroundColor Green
-	$ArrayRL = @{}
-	foreach($result in $results)
+	Write-Host "`t" $SortedResults.count -ForeGroundColor Green
+	$ArrayRL = [ordered]@{}
+	foreach($result in $SortedResults)
 	{
-		$ArrayRL += @{
-			$result.Name = "True"
-		}
+		$ArrayRL[$result.Name] = "True"
 	}
 	$ExportRL = "MPARR-RetentionLabelsList.json"
 	$pathRL = $PSScriptRoot+"\ConfigFiles\"+$ExportRL
