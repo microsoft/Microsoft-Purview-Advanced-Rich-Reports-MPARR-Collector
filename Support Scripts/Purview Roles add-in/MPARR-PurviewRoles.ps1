@@ -24,7 +24,7 @@ SOFTWARE.
 HISTORY
 Script      : Get-PurviewRoles.ps1
 Author      : S. Zamorano
-Version     : 1.0.0
+Version     : 1.0.1
 Description : The script exports Purview Roles assigned from Exchange Online API and pushes into a customer-specified Log Analytics table. Please note if you change the name of the table - you need to update Workbook sample that displays the report , appropriately. Do ensure the older table is deleted before creating the new table - it will create duplicates and Log analytics workspace doesn't support upserts or updates.
 
 .NOTES 
@@ -392,4 +392,9 @@ function Export-PurviewRoles
  
 #Run the script.
 CheckPrerequisites
+if($CreateTask)
+{
+	CreateMPARRPurviewRolesTask
+	exit
+}
 Export-PurviewRoles
