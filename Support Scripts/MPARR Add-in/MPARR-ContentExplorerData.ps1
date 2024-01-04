@@ -23,7 +23,7 @@ HISTORY
 Script      : MPARR-ContentExplorerData-BasicReturn.ps1
 Author      : Sebastian Zamorano
 Co-Author   : 
-Version     : 2.0.2
+Version     : 2.0.3
 Date		: 22-12-2023
 Description : The script exports Content Explorer from Export-ContentExplorerData and pushes into a customer-specified Log Analytics table. 
 			Please note if you change the name of the table - you need to update Workbook sample that displays the report , appropriately. 
@@ -35,6 +35,7 @@ Description : The script exports Content Explorer from Export-ContentExplorerDat
 	29-12-2023	S. Zamorano		- First Release
 	02-01-2024  S. Zamorano		- Columns added to the results, TagType and TagName for Logs Analytics, to improve the reports on Power BI
 	03-01-2024	S. Zamorano		- Organize the Json files in alphabetical order, my thanks to G. Berdzik
+	04-01-2024	S. Zamorano		- Some additional information added to logs for errors and summary, added logs to export to Logs Analtytics
 #>
 
 [CmdletBinding(DefaultParameterSetName = "None")]
@@ -835,6 +836,7 @@ function ExecuteExportCmdlet($TagType, $Workload, $Tag, $PageSize)
 	
 	$CEResults = @()
 	$query = Export-ContentExplorerData -TagType $TagType -TagName $tag -PageSize $PageSize -Workload $Workload 
+	$CmdletUsed = "Export-ContentExplorerData -TagType $TagType -TagName '$($tag)' -PageSize $PageSize -Workload $Workload"
 	$var = $query.count
 	$Total = $query[0].TotalCount
 	$TotalExported = 0
@@ -852,7 +854,7 @@ function ExecuteExportCmdlet($TagType, $Workload, $Tag, $PageSize)
 		Write-Host "`n### File was not created." -ForeGroundColor Blue
 		$path2 = $PSScriptRoot+"\ContentExplorerExport\"+$ExportError
 		$ErrorExportArray = @(
-			[pscustomobject]@{TagType=$TagType;TagName=$tag;Workload=$Workload;ExportedFiles=$Total;TotalMatches=$Total}
+			[pscustomobject]@{TagType=$TagType;TagName=$tag;Workload=$Workload;ExportedFiles=$Total;TotalMatches=$Total;CmdletUsed=$CmdletUsed}
 		)
 		$ErrorExportArray | Export-Csv -Path $path2 -Force -Append | Out-Null
 		return
@@ -886,7 +888,7 @@ function ExecuteExportCmdlet($TagType, $Workload, $Tag, $PageSize)
 	#Generate a summary with the total results
 	$pathsummary = $PSScriptRoot+"\ContentExplorerExport\"+$ExportSummary
 	$SummaryExportArray = @(
-		[pscustomobject]@{TagType=$TagType;TagName=$tag;Workload=$Workload;MatchedFiles=$Total;ExportedFiles=$TotalExported;FileName=$ExportFile}
+		[pscustomobject]@{TagType=$TagType;TagName=$tag;Workload=$Workload;MatchedFiles=$Total;ExportedFiles=$TotalExported;FileName=$ExportFile;CmdletUsed=$CmdletUsed}
 	)
 	$SummaryExportArray | Export-Csv -Path $pathsummary -Force -Append
 }
@@ -896,14 +898,17 @@ function ExportDataToLogsAnalytics($TagType, $Workload, $Tag, $PageSize)
 	#Generate the query to collect the data
 	$date2 = Get-Date -Format "yyyyMMdd"
 	$ExportError = "ContentExplorerExport-ErrorLogsAnalytics-"+$date2+".csv"
+	$ExportSummary = "ContentExplorerExport-SummaryLogsAnalytics"+$date2+".csv"
 	$CEResults = @()
-	$query = Export-ContentExplorerData -TagType $TagType -TagName $tag -PageSize $PageSize -Workload $Workload 
+	$query = Export-ContentExplorerData -TagType $TagType -TagName $tag -PageSize $PageSize -Workload $Workload
+	$CmdletUsed = "Export-ContentExplorerData -TagType $TagType -TagName '$($tag)' -PageSize $PageSize -Workload $Workload"
 	$var = $query.count
 	$Total = $query[0].TotalCount
 	$TotalExported = 0
 	$remaining = $Total
 	$ErrorExportArray = @()
 	$SummaryExportArray = @()
+	$pathsummary = $PSScriptRoot+"\ContentExplorerExport\"+$ExportSummary
 	
 	#Add additional columns to simplify reports
 	$i = 1
@@ -918,7 +923,7 @@ function ExportDataToLogsAnalytics($TagType, $Workload, $Tag, $PageSize)
 	{
 		$path2 = $PSScriptRoot+"\ContentExplorerExport\"+$ExportError
 		$ErrorExportArray = @(
-			[pscustomobject]@{TagType=$TagType;TagName=$tag;Workload=$Workload;ExportedFiles=$Total;TotalMatches=$Total}
+			[pscustomobject]@{TagType=$TagType;TagName=$tag;Workload=$Workload;ExportedFiles=$Total;TotalMatches=$Total;CmdletUsed=$CmdletUsed}
 		)
 		$ErrorExportArray | Export-Csv -Path $path2 -Force -Append | Out-Null
 		return
@@ -961,6 +966,11 @@ function ExportDataToLogsAnalytics($TagType, $Workload, $Tag, $PageSize)
         }    
 
         Post-LogAnalyticsData -LogAnalyticsTableName $TableLA -body $log_analytics_array
+		#Generate a summary with the total results
+		$SummaryExportArray = @(
+			[pscustomobject]@{TagType=$TagType;TagName=$tag;Workload=$Workload;MatchedFiles=$Total;ExportedFiles=$log_analytics_array.count;TableName=$TableLA;CmdletUsed=$CmdletUsed}
+		)
+		$SummaryExportArray | Export-Csv -Path $pathsummary -Force -Append
 	}
 	if($Workload -eq 'SharePoint')
 	{
@@ -973,6 +983,11 @@ function ExportDataToLogsAnalytics($TagType, $Workload, $Tag, $PageSize)
         }    
 
         Post-LogAnalyticsData -LogAnalyticsTableName $TableLA -body $log_analytics_array
+		#Generate a summary with the total results
+		$SummaryExportArray = @(
+			[pscustomobject]@{TagType=$TagType;TagName=$tag;Workload=$Workload;MatchedFiles=$Total;ExportedFiles=$log_analytics_array.count;TableName=$TableLA;CmdletUsed=$CmdletUsed}
+		)
+		$SummaryExportArray | Export-Csv -Path $pathsummary -Force -Append
 	}
 	if($Workload -eq 'OneDrive')
 	{
@@ -985,6 +1000,11 @@ function ExportDataToLogsAnalytics($TagType, $Workload, $Tag, $PageSize)
         }    
 
         Post-LogAnalyticsData -LogAnalyticsTableName $TableLA -body $log_analytics_array
+		#Generate a summary with the total results
+		$SummaryExportArray = @(
+			[pscustomobject]@{TagType=$TagType;TagName=$tag;Workload=$Workload;MatchedFiles=$Total;ExportedFiles=$log_analytics_array.count;TableName=$TableLA;CmdletUsed=$CmdletUsed}
+		)
+		$SummaryExportArray | Export-Csv -Path $pathsummary -Force -Append
 	}
 	if($Workload -eq 'Teams')
 	{
@@ -997,6 +1017,11 @@ function ExportDataToLogsAnalytics($TagType, $Workload, $Tag, $PageSize)
         }    
 
         Post-LogAnalyticsData -LogAnalyticsTableName $TableLA -body $log_analytics_array
+		#Generate a summary with the total results
+		$SummaryExportArray = @(
+			[pscustomobject]@{TagType=$TagType;TagName=$tag;Workload=$Workload;MatchedFiles=$Total;ExportedFiles=$log_analytics_array.count;TableName=$TableLA;CmdletUsed=$CmdletUsed}
+		)
+		$SummaryExportArray | Export-Csv -Path $pathsummary -Force -Append
 	}
 }
 
@@ -1079,7 +1104,12 @@ function CollectData($TagType, $Workload, $PageSize, $ReadExport)
 	{
 		# Set the default configuration for Export-ContentExplorer
 		$PageSize = $PageSize
-		New-Item -ItemType Directory -Force -Path "$PSScriptRoot\ContentExplorerExport" | Out-Null
+		$ExportPath = $PSScriptRoot+"\ContentExplorerExport"
+		if(-Not (Test-Path $ExportPath ))
+		{
+			Write-Host "Export data directory is missing, creating a new folder called ContentExplorerExport"
+			New-Item -ItemType Directory -Force -Path "$PSScriptRoot\ContentExplorerExport" | Out-Null
+		}
 		
 		#Step 2: Show the configuration set
 		cls
