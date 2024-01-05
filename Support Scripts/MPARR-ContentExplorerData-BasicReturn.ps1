@@ -23,7 +23,7 @@ HISTORY
 Script      : MPARR-ContentExplorerData-BasicReturn.ps1
 Author      : Sebastian Zamorano
 Co-Author   : 
-Version     : 1.0.0
+Version     : 1.0.4
 Date		: 22-12-2023
 Description : The script exports Content Explorer from Export-ContentExplorerData and pushes into a customer-specified Log Analytics table. 
 			Please note if you change the name of the table - you need to update Workbook sample that displays the report , appropriately. 
@@ -32,12 +32,15 @@ Description : The script exports Content Explorer from Export-ContentExplorerDat
 .NOTES 
 	22-12-2023	S. Zamorano		- First released
 	26-12-2023	S. Zamorano		- Added functions to support list of SITs, list of Trainable Classifiers and capability to set Page Size
+	05-01-2024	S. Zamorano		- Change page size adjustment, export to csv modified to append data to CSV on each query, avoiding to collect all in one array previous to export(memory management)
 #>
 
 [CmdletBinding(DefaultParameterSetName = "None")]
 param(
     [Parameter()] 
-        [switch]$ChangePageSize
+        [switch]$ChangePageSize,
+	#Export-ContentExplorerData cmdlet requires a PageSize that can be between 1 to 5000, by default is set to 100, you can change the number below or use the parameter -ChangePageSize to modify during the execution
+	[int]$InitialPageSize = 100
 )
 
 function CheckPowerShellVersion
@@ -424,16 +427,15 @@ function CollectData($TagType, $Workload, $PageSize)
 		$remaining -= ($var - 1)
 		Write-Host "Total matches remaining to process :" -NoNewLine
 		Write-Host $remaining -ForeGroundColor Green
+		$CEResults | Export-Csv -Path $ExportFile -NTI -Force -Append | Out-Null
+		$CEResults = @()
 	}
 
 	if ($remaining -gt 0)
 	{
 		$CEResults += $query[1..$remaining]
-		$query = Export-ContentExplorerData -TagType $TagType -TagName $tagname -PageSize $PageSize -Workload $Workload -PageCookie $query[0].PageCookie
+		$CEResults | Export-Csv -Path $ExportFile -NTI -Force -Append | Out-Null
 	}
-	 
-	$CEResults | Export-Csv -Path $ExportFile -NTI -Force
-	
 }
 
 function SelectContinuity
@@ -483,10 +485,12 @@ function MainFunction()
 		$Workload = ReadWorkload	
 
 		#PageSize to be used
-		$Size = 50
 		if($ChangePageSize)
 		{
-			$Size = ExportPageSize -PageSize $Size
+			$Size = ExportPageSize -PageSize $InitialPageSize
+		}else
+		{
+			$Size = $InitialPageSize
 		}
 
 		#Execute the query
