@@ -22,13 +22,14 @@ SOFTWARE.
 
 <#
 HISTORY
-Script      : Get-PurviewRoles.ps1
+Script      : MPARR-PurviewRoles.ps1
 Author      : S. Zamorano
-Version     : 1.0.1
+Version     : 1.0.4
 Description : The script exports Purview Roles assigned from Exchange Online API and pushes into a customer-specified Log Analytics table. Please note if you change the name of the table - you need to update Workbook sample that displays the report , appropriately. Do ensure the older table is deleted before creating the new table - it will create duplicates and Log analytics workspace doesn't support upserts or updates.
 
 .NOTES 
 	04-01-2024	S. Zamorano		- First release
+	05-01-2024	S. Zamorano		- Added additional validations, and some fixes related to validations
 #>
 
 
@@ -60,9 +61,30 @@ function CheckPowerShellVersion
     }
 }
 
-function CheckPrerequisites
+function CheckCertificateInstalled($thumbprint)
 {
-    CheckPowerShellVersion
+	$var = "False"
+	$certificates = @(Get-ChildItem Cert:\CurrentUser\My | Where-Object {$_.EnhancedKeyUsageList -like "*Client Authentication*"}| Select-Object Thumbprint) 
+	#$thumbprint -in $certificates
+	foreach($certificate in $certificates)
+	{
+		if($thumbprint -in $certificate.Thumbprint)
+		{
+			$var = "True"
+		}
+	 }
+	 if($var -eq "True")
+	 {
+		Write-Host "Certificate validation..." -NoNewLine
+		Write-Host "`t`t`t`tPassed!" -ForegroundColor Green
+		return $var
+	 }else
+	 {
+		Write-Host "`nCertificate installed on this machine is missing!!!" -ForeGroundColor Yellow
+		Write-Host "To execute this script unattended a certificate needs to be installed, the same used under Microsoft Entra App"
+		Start-Sleep -s 1
+		return $var
+	 }
 }
 
 function ValidateConfigurationFile
@@ -72,8 +94,31 @@ function ValidateConfigurationFile
 	
 	if (-not (Test-Path -Path $MPARRConfiguration))
 	{
+		Write-Host "`n##########################################################################################" -ForeGroundColor Yellow
 		Write-Host "`nThe laconfig.json file is missing. Check if you are using the right path or execute MPARR_Setup.ps1 first."
-		exit
+		Write-Host "`nThe laconfig.json is required to continue, if you want to export the data without having MPARR installed, please execute:" -NoNewLine
+		Write-Host ".\MPARR-PurviewRoles.ps1 -ExportToFileOnly -ManualConnection" -ForeGroundColor Green
+		Write-Host "`n##########################################################################################" -ForeGroundColor Yellow
+		Write-Host "`n"
+		if($ExportToFileOnly)
+		{
+			if($ManualConnection)
+			{
+				return
+			}else
+			{
+				Write-Host "`n##########################################################################################" -ForeGroundColor Yellow
+				Write-Host "`nThe laconfig.json is required to continue, if you want to export the data without having MPARR installed, please execute:" -NoNewLine
+				Write-Host ".\MPARR-PurviewRoles.ps1 -ExportToFileOnly -ManualConnection" -ForeGroundColor Green
+				Write-Host "`n##########################################################################################" -ForeGroundColor Yellow
+				Write-Host "`n"
+				Write-Host "`n"
+				exit
+			}
+		}else
+		{
+			exit
+		}
 	}else
 	{
 		#If the file is present we check if something is not correctly populated
@@ -100,6 +145,11 @@ function ValidateConfigurationFile
 	}
 }
 
+function CheckPrerequisites
+{
+    CheckPowerShellVersion
+}
+
 function DecryptSharedKey 
 {
     param(
@@ -120,25 +170,11 @@ function DecryptSharedKey
 
 function connect2service
 {	
-	ValidateConfigurationFile
-	
-	$CONFIGFILE = "$PSScriptRoot\laconfig.json"
-	$json = Get-Content -Raw -Path $CONFIGFILE
-	[PSCustomObject]$config = ConvertFrom-Json -InputObject $json
-	
-	$EncryptedKeys = $config.EncryptedKeys
-	$AppClientID = $config.AppClientID
-	$CertificateThumb = $config.CertificateThumb
-	$OnmicrosoftTenant = $config.OnmicrosoftURL
-	if ($EncryptedKeys -eq "True")
-	{
-		$CertificateThumb = DecryptSharedKey $CertificateThumb
-	}
-	
+	ValidateConfigurationFile	
 	<#
 	.NOTES
 	If you cannot add the "Compliance Administrator" role to the Microsoft Entra App, for security reasons, you can execute with "Compliance Administrator" role 
-	this script using .\MPARR-ContentExplorer.ps1 -ManualConnection
+	this script using .\MPARR-PurviewSensitivityLabels.ps1 -ManualConnection
 	#>
 	if($ManualConnection)
 	{
@@ -146,7 +182,30 @@ function connect2service
 		Connect-IPPSSession -UseRPSSession:$false
 	}else
 	{
-		Connect-IPPSSession -CertificateThumbPrint $CertificateThumb -AppID $AppClientID -Organization $OnmicrosoftTenant
+		$CONFIGFILE = "$PSScriptRoot\laconfig.json"
+		$json = Get-Content -Raw -Path $CONFIGFILE
+		[PSCustomObject]$config = ConvertFrom-Json -InputObject $json
+		
+		$EncryptedKeys = $config.EncryptedKeys
+		$AppClientID = $config.AppClientID
+		$CertificateThumb = $config.CertificateThumb
+		$OnmicrosoftTenant = $config.OnmicrosoftURL
+		if ($EncryptedKeys -eq "True")
+		{
+			$CertificateThumb = DecryptSharedKey $CertificateThumb
+		}
+		$status = CheckCertificateInstalled -thumbprint $CertificateThumb
+		
+		if($status -eq "True")
+		{
+			Connect-IPPSSession -CertificateThumbPrint $CertificateThumb -AppID $AppClientID -Organization $OnmicrosoftTenant
+		}else
+		{
+			Write-Host "`nThe Certificate set in laconfig.json don't match with the certificates installed on this machine, you can try to execute using manual connection, to do that extecute: "
+			Write-Host ".\MPARR-PurviewRoles.ps1 -ManualConnection" -ForeGroundColor Green
+			exit
+		}
+		
 	}
 }
 
@@ -218,7 +277,7 @@ function CreateMPARRPurviewRolesTask
 	# Task execution
     $validDays = 30
     $choices  = '&Yes', '&No'
-    $decision = $Host.UI.PromptForChoice("", "The task on task scheduler will be set for 30 days, do you want to change?", $choices, 1)
+    $decision = $Host.UI.PromptForChoice("", "The task on task scheduler will be set for $validDays days, do you want to change?", $choices, 1)
     if ($decision -eq 0)
     {
         ReadNumber -max 31 -msg "Enter number of days (Between 1 to 31). Remember check the retention period in your workspace in Logs Analtytics." -option ([ref]$validDays)
