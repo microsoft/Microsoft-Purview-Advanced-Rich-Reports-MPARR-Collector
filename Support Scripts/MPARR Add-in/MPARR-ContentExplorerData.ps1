@@ -23,7 +23,7 @@ HISTORY
 Script      : MPARR-ContentExplorerData-BasicReturn.ps1
 Author      : Sebastian Zamorano
 Co-Author   : 
-Version     : 2.0.3
+Version     : 2.0.4
 Date		: 22-12-2023
 Description : The script exports Content Explorer from Export-ContentExplorerData and pushes into a customer-specified Log Analytics table. 
 			Please note if you change the name of the table - you need to update Workbook sample that displays the report , appropriately. 
@@ -36,11 +36,14 @@ Description : The script exports Content Explorer from Export-ContentExplorerDat
 	02-01-2024  S. Zamorano		- Columns added to the results, TagType and TagName for Logs Analytics, to improve the reports on Power BI
 	03-01-2024	S. Zamorano		- Organize the Json files in alphabetical order, my thanks to G. Berdzik
 	04-01-2024	S. Zamorano		- Some additional information added to logs for errors and summary, added logs to export to Logs Analtytics
+	05-01-2024	S. Zamorano		- Improve how to manage page size, and how the data is exported to CSV or Logs Analytics
 #>
 
 [CmdletBinding(DefaultParameterSetName = "None")]
 param(
 	[string]$TableName = "ContentExplorer",
+	#Export-ContentExplorerData cmdlet requires a PageSize that can be between 1 to 5000, by default is set to 100, you can change the number below or use the parameter -ChangePageSize to modify during the execution
+	[int]$InitialPageSize = 100,
 	[Parameter()] 
         [switch]$ExportToFileOnly,
     [Parameter()] 
@@ -565,7 +568,6 @@ function ReadWorkload($ReadExport)
 					$workload += $service.Name
 				}
 			}
-			Write-Host $workload
 			return $workload
 		}
 
@@ -622,7 +624,6 @@ function ReadTagType($ReadExport)
 					$TagType += $tag.Name
 				}
 			}
-			Write-Host $TagType
 			return $TagType
 		}
 	}
@@ -824,6 +825,7 @@ function ExecuteExportCmdlet($TagType, $Workload, $Tag, $PageSize)
 	$date2 = Get-Date -Format "yyyyMMdd"
 	$ExportError = "ContentExplorerExport-Error"+$date2+".csv"
 	$ExportSummary = "ContentExplorerExport-Summary"+$date2+".csv"
+	$path = $PSScriptRoot+"\ContentExplorerExport\"+$ExportFile
 	
 	if($MassExportToCsv)
 	{
@@ -871,19 +873,16 @@ function ExecuteExportCmdlet($TagType, $Workload, $Tag, $PageSize)
 		Write-Host "Total matches remaining to process :" -NoNewLine
 		Write-Host $remaining -ForeGroundColor Green
 		$TotalExported += ($query.count - 1)
+		$CEResults | Export-Csv -Path $path -NTI -Force -Append | Out-Null
+		$CEResults = @()
 	}
 
 	if ($query.count -gt 0)
 	{
 		$CEResults += $query[1..$remaining]
 		$TotalExported += ($query.count - 1)
+		$CEResults | Export-Csv -Path $path -NTI -Force -Append | Out-Null
 	}
-	
-	#Generate a file with results	
-	$path = $PSScriptRoot+"\ContentExplorerExport\"+$ExportFile
-	$ToLogsAnalyticsData = @()
-	$ToLogsAnalyticsData = $CEResults
-	$CEResults | Export-Csv -Path $path -NTI -Force
 	
 	#Generate a summary with the total results
 	$pathsummary = $PSScriptRoot+"\ContentExplorerExport\"+$ExportSummary
@@ -1398,15 +1397,14 @@ function MainFunction()
 		}
 		
 		#PageSize to be used
-		$Size = 50
-		
-		if($ExportToFileOnly)
+		if($ChangePageSize)
 		{
-			if($ChangePageSize)
-			{
-				$Size = ExportPageSize -PageSize $Size
-			}
+			$Size = ExportPageSize -PageSize $InitialPageSize
+		}else
+		{
+			$Size = $InitialPageSize
 		}
+		
 		#Execute the query
 		CollectData -TagType $TagType -Workload $Workload -PageSize $Size -ReadExport $DefaultExport
 		
