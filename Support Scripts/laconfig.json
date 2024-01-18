@@ -1,0 +1,15 @@
+{
+  "EncryptedKeys": "True",
+  "AppClientID": "",
+  "ClientSecretValue": "",
+  "TenantGUID": "",
+  "TenantDomain": "",
+  "LA_CustomerID": "",
+  "LA_SharedKey": "",
+  "CertificateThumb": "",
+  "OnmicrosoftURL": "",
+  "RMSLogs": "C:\\MPARR Collector\\RMSLogs\\",
+  "OutPutLogs": "C:\\MPARR Collector\\APILogs\\",
+  "Cloud": "Commercial",
+  "MicrosoftEntraConfig": "Not Set"
+}
