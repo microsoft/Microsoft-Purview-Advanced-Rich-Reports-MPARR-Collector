@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 2.0.4
+.VERSION 2.0.5
 
 .GUID 883af802-165c-471a-b4c1-352686c02f01
 
@@ -50,13 +50,14 @@ The script exports Purview Sensitive Information Types from Exchange Online API
 HISTORY
 Script      : MPARR-PurviewSITs.ps1
 Author      : S. Zamorano
-Version     : 2.0.4
+Version     : 2.0.5
 Description : The script exports Purview Sensitive Information Types from Exchange Online API and pushes into a customer-specified Log Analytics table. Please note if you change the name of the table - you need to update Workbook sample that displays the report , appropriately. Do ensure the older table is deleted before creating the new table - it will create duplicates and Log analytics workspace doesn't support upserts or updates.
 
 .NOTES 
 	04-01-2024	S. Zamorano		- First release
 	07-02-2024	S. Zamorano		- Added EventHub connector
 	12-02-2024	S. Zamorano		- New version released
+	01-03-2024	S. Zamorano		- Public release
 #>
 
 using module "ConfigFiles\MPARRUtils.psm1"

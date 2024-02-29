@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 2.0.4
+.VERSION 2.0.5
 
 .GUID 883af802-165c-4705-b4c1-352686c02f01
 
@@ -50,7 +50,7 @@ This script permit to collect some Cloud statistics, total active files on SPO/O
 HISTORY
 Script      : MPARR-M365CloudStatistics.ps1
 Author      : S. Zamorano
-Version     : 2.0.4
+Version     : 2.0.5
 Description : This script permit to collect some Cloud statistics, total active files on SPO/OD and total number of sites, using Microsoft Graph API
 
 .NOTES 
@@ -59,6 +59,7 @@ Description : This script permit to collect some Cloud statistics, total active 
 	07-02-2024  G. Berdzik  	- Set Graph connection functions
 	07-02-2024	S. Zamorano		- Set integration
 	12-02-2024	S. Zamorano		- Version released
+	01-03-2024	S. Zamorano		- Public release
 #>
 
 using module "ConfigFiles\MPARRUtils.psm1"

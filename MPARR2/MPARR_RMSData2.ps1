@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 2.0.4
+.VERSION 2.0.5
 
 .GUID 883af802-165c-4701-b4c1-352686c02f01
 
@@ -64,20 +64,20 @@ The script exports Aipservice Log Data from Microsoft AADRM API and pushes into 
 HISTORY
 Script      : MPARR-RMSData2.ps1
 Author      : S. Zamorano
-Version     : 2.0.4
+Version     : 2.0.5
 
 .NOTES (Version 2)
 	02-02-2024	S. Zamorano		- Script was re written and EventHub connector added
 	02-02-2024	S. Zamorano		- First release
 	14-02-2024	Berdzik\Zamorano- Added function to call support scripts using PowerShell 5
-
+	01-03-2024	S. Zamorano		- Public release
 #> 
 
 using module "ConfigFiles\MPARRUtils.psm1"
 param (
     # Log Analytics table where the data is written to. Log Analytics will add an _CL to this name.
     [string]$TableName = "RMSData",
-	[int]$NumberOfThreads = 1,
+	[int]$NumberOfThreads = 4,
 	[string]$batchSize = 8MB,
 	[Parameter()] 
         [switch]$ExportToJSONFileOnly,

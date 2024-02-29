@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 2.0.4
+.VERSION 2.0.5
 
 .GUID 883af802-165c-4704-b4c1-352686c02f01
 
@@ -80,13 +80,14 @@ Run this command: .\ExportCSV2LA.ps1 -FileName '.\Support\Product names and serv
 HISTORY
 Script      : ExportCSV2LA.ps1
 Author      : G. Berdzik
-Version     : 2.0.4
+Version     : 2.0.5
 Description : The script exports a CSV file as table on Logs Analytics
 
 .NOTES
 
 12-10-2022		S. Zamorano		- Added laconfig.json file for configuration and decryption function
-12-02-2024		S. Zamorano		- Version released with EvenHub export option
+12-02-2024		S. Zamorano		- Version released with EvenHub export 
+01-03-2024		S. Zamorano		- Public release
 #>
 
 using module "ConfigFiles\MPARRUtils.psm1"
@@ -355,7 +356,6 @@ function ExportCSVtoLA
 			$EventHubInstance.PublishToEventHub($log_analytics_array, $ErrorFile)
 		}else
 		{
-			Write-Host "I'm here"
 			Write-host "Table:" $TableName
 			Write-Host "Data :"$log_analytics_array.count
 			Post-LogAnalyticsData -LogAnalyticsTableName $TableName -body $log_analytics_array

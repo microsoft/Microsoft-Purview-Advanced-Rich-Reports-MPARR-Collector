@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 2.0.4
+.VERSION 2.0.5
 
 .GUID 883af802-165c-4703-b4c1-352686c02f01
 
@@ -66,6 +66,7 @@ Description : The script exports Content Explorer from Export-ContentExplorerDat
 	04-01-2024	S. Zamorano		- Some additional information added to logs for errors and summary, added logs to export to Logs Analtytics
 	05-01-2024	S. Zamorano		- Improve how to manage page size, and how the data is exported to CSV or Logs Analytics
 	05-02-2024	S. Zamorano		- Buffer added to send to Logs Analytics and Trap cmdlet to fix some breaks
+	01-03-2024	S. Zamorano		- Public release
 #>
 
 [CmdletBinding(DefaultParameterSetName = "None")]

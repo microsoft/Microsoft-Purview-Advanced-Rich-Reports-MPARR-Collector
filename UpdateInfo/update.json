@@ -3,7 +3,7 @@
         {
             "directory": "ConfigFiles",
             "file": "schemas.json",
-			"version": "2.0.4",
+			"version": "2.0.5",
 			"format": "SupportScript",
 			"changes": "New MPARR 2 initial release",
             "URI": "MPARR2/ConfigFiles/schemas.json"
@@ -11,7 +11,7 @@
 		{
             "directory": "ConfigFiles",
             "file": "mgreports.json",
-			"version": "2.0.4",
+			"version": "2.0.5",
 			"format": "SupportScript",
 			"changes": "New MPARR 2 initial release",
             "URI": "MPARR2/ConfigFiles/mgreports.json"
@@ -19,7 +19,7 @@
 		{
             "directory": "ConfigFiles",
             "file": "MPARR_EntraIDUsers.json",
-			"version": "2.0.4",
+			"version": "2.0.5",
 			"format": "SupportScript",
 			"changes": "New MPARR 2 initial release",
             "URI": "MPARR2/ConfigFiles/MPARR_EntraIDUsers.json"
@@ -27,7 +27,7 @@
 		{
             "directory": "ConfigFiles",
             "file": "MPARR-CETagtype.json",
-			"version": "2.0.4",
+			"version": "2.0.5",
 			"format": "SupportScript",
 			"changes": "New MPARR 2 initial release",
             "URI": "MPARR2/ConfigFiles/MPARR-CETagtype.json"
@@ -35,7 +35,7 @@
 		{
             "directory": "ConfigFiles",
             "file": "MPARR-CEWorkload.json",
-			"version": "2.0.4",
+			"version": "2.0.5",
 			"format": "SupportScript",
 			"changes": "New MPARR 2 initial release",
             "URI": "MPARR2/ConfigFiles/MPARR-CEWorkload.json"
@@ -43,7 +43,7 @@
 		{
             "directory": "ConfigFiles",
             "file": "MPARR-GetRMSData.ps1",
-			"version": "2.0.4",
+			"version": "2.0.5",
 			"format": "ps1",
 			"changes": "New MPARR 2 initial release",
             "URI": "MPARR2/ConfigFiles/MPARR-GetRMSData.ps1"
@@ -51,7 +51,7 @@
 		{
             "directory": "ConfigFiles",
             "file": "MPARR-GetTrackingRMSData.ps1",
-			"version": "2.0.4",
+			"version": "2.0.5",
 			"format": "ps1",
 			"changes": "New MPARR 2 initial release",
             "URI": "MPARR2/ConfigFiles/MPARR-GetTrackingRMSData.ps1"
@@ -59,7 +59,7 @@
 		{
             "directory": "ConfigFiles",
             "file": "MPARR-TrainableClassifiersList.json",
-			"version": "2.0.4",
+			"version": "2.0.5",
 			"format": "SupportScript",
 			"changes": "New MPARR 2 initial release",
             "URI": "MPARR2/ConfigFiles/MPARR-TrainableClassifiersList.json"
@@ -67,7 +67,7 @@
 		{
             "directory": "ConfigFiles",
             "file": "MPARRUtils.psd1",
-			"version": "2.0.4",
+			"version": "2.0.5",
 			"format": "SupportScript",
 			"changes": "New MPARR 2 initial release",
             "URI": "MPARR2/ConfigFiles/MPARRUtils.psd1"
@@ -75,7 +75,7 @@
 		{
             "directory": "ConfigFiles",
             "file": "MPARRUtils.psm1",
-			"version": "2.0.4",
+			"version": "2.0.5",
 			"format": "SupportScript",
 			"changes": "New MPARR 2 initial release",
             "URI": "MPARR2/ConfigFiles/MPARRUtils.psm1"
@@ -83,7 +83,7 @@
         {
             "directory": "ROOT",
             "file": "MPARR_Collector2.ps1",
-			"version": "2.0.4",
+			"version": "2.0.5",
 			"format": "ps1",
 			"changes": "New MPARR 2 initial release",
             "URI": "MPARR2/MPARR_Collector2.ps1"
@@ -91,7 +91,7 @@
         {
             "directory": "ROOT",
             "file": "MPARR_RMSData2.ps1",
-			"version": "2.0.4",
+			"version": "2.0.5",
 			"format": "ps1",
 			"changes": "New MPARR 2 initial release",
             "URI": "MPARR2/MPARR_RMSData2.ps1"
@@ -99,7 +99,7 @@
         {
             "directory": "ROOT",
             "file": "MPARR2_Setup.ps1",
-			"version": "2.0.4",
+			"version": "2.0.5",
 			"format": "ps1",
 			"changes": "New MPARR 2 initial release",
             "URI": "MPARR2/MPARR2_Setup.ps1"
@@ -107,7 +107,7 @@
         {
             "directory": "ROOT",
 			"file": "MPARR-ContentExplorerData.ps1",
-			"version": "2.0.4",
+			"version": "2.0.5",
 			"format": "ps1",
 			"changes": "New MPARR 2 initial release",
             "URI": "MPARR2/MPARR-ContentExplorerData.ps1"
@@ -115,7 +115,7 @@
         {
             "directory": "ROOT",
             "file": "MPARR-ExportCSV2LA.ps1",
-			"version": "2.0.4",
+			"version": "2.0.5",
 			"format": "ps1",
 			"changes": "New MPARR 2 initial release",
             "URI": "MPARR2/MPARR-ExportCSV2LA.ps1"
@@ -123,7 +123,7 @@
         {
             "directory": "ROOT",
             "file": "MPARR-M365CloudStatistics.ps1",
-			"version": "2.0.4",
+			"version": "2.0.5",
 			"format": "ps1",
 			"changes": "New MPARR 2 initial release",
             "URI": "MPARR2/MPARR-M365CloudStatistics.ps1"
@@ -131,7 +131,7 @@
         {
             "directory": "ROOT",
             "file": "MPARR-MicrosoftEntraDomains.ps1",
-			"version": "2.0.4",
+			"version": "2.0.5",
 			"format": "ps1",
 			"changes": "New MPARR 2 initial release",
             "URI": "MPARR2/MPARR-MicrosoftEntraDomains.ps1"
@@ -139,7 +139,7 @@
         {
             "directory": "ROOT",
             "file": "MPARR-MicrosoftEntraRoles.ps1",
-			"version": "2.0.4",
+			"version": "2.0.5",
 			"format": "ps1",
 			"changes": "New MPARR 2 initial release",
             "URI": "MPARR2/MPARR-MicrosoftEntraRoles.ps1"
@@ -147,7 +147,7 @@
         {
             "directory": "ROOT",
             "file": "MPARR-MicrosoftEntraUsers.ps1",
-			"version": "2.0.4",
+			"version": "2.0.5",
 			"format": "ps1",
 			"changes": "New MPARR 2 initial release",
             "URI": "MPARR2/MPARR-MicrosoftEntraUsers.ps1"
@@ -155,7 +155,7 @@
         {
             "directory": "ROOT",
             "file": "MPARR-PurviewRoles.ps1",
-			"version": "2.0.4",
+			"version": "2.0.5",
 			"format": "ps1",
 			"changes": "New MPARR 2 initial release",
             "URI": "MPARR2/MPARR-PurviewRoles.ps1"
@@ -163,7 +163,7 @@
         {
             "directory": "ROOT",
             "file": "MPARR-PurviewSensitivityLabels.ps1",
-			"version": "2.0.4",
+			"version": "2.0.5",
 			"format": "ps1",
 			"changes": "New MPARR 2 initial release",
             "URI": "MPARR2/MPARR-PurviewSensitivityLabels.ps1"
@@ -171,7 +171,7 @@
         {
             "directory": "ROOT",
             "file": "MPARR-PurviewSITs.ps1",
-			"version": "2.0.4",
+			"version": "2.0.5",
 			"format": "ps1",
 			"changes": "New MPARR 2 initial release",
             "URI": "MPARR2/MPARR-PurviewSITs.ps1"

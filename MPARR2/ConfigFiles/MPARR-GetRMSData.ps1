@@ -1,6 +1,6 @@
 ﻿<#PSScriptInfo
 
-.VERSION 2.0.4
+.VERSION 2.0.5
 
 .GUID 883af802-165c-4700-b4c1-352686c02f01
 
@@ -54,12 +54,13 @@ This script needs PowerShell 5 and is called from MPARR_RMSData2.ps1
 HISTORY
 Script      : MPARR-GetRMSData.ps1
 Author      : S. Zamorano
-Version     : 2.0.4
+Version     : 2.0.5
 Dependencie	: Called by MPARR_RMSData2.ps1 and uses PowerShell 5
 Description : The script exports RMS Logs assigned from RMS API and pushes into a customer-specified Log Analytics table. Please note if you change the name of the table - you need to update Workbook sample that displays the report , appropriately. Do ensure the older table is deleted before creating the new table - it will create duplicates and Log analytics workspace doesn't support upserts or updates.
 
 .NOTES 
 	12-02-2024	S. Zamorano		- Version released
+	01-03-2024	S. Zamorano		- Public release
 #>
 
 param(
@@ -78,7 +79,7 @@ function CheckCertificateInstalled($thumbprint)
 {
 	$var = "False"
 	$certificates = @(Get-ChildItem Cert:\CurrentUser\My | Where-Object {$_.EnhancedKeyUsageList -like "*Client Authentication*"}| Select-Object Thumbprint) 
-	#$thumbprint -in $certificates
+	
 	foreach($certificate in $certificates)
 	{
 		if($thumbprint -in $certificate.Thumbprint)

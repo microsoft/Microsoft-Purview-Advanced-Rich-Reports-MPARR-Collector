@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 2.0.4
+.VERSION 2.0.5
 
 .GUID 883af802-165c-4702-b4c1-352686c02f01
 
@@ -66,8 +66,8 @@ MPARR installer.
     [0] - Exit 
     
 .NOTES
-    Version 1.0
-    Current version - 20.10.2023
+    Version 2.0.5
+    Current version - 01.03.2024
 #> 
 
 <#
@@ -86,6 +86,8 @@ HISTORY
   2023-10-03	S.Zamorano	- Added digital signature for MPARR scripts
   2023-10-05	S.Zamorano	- Added comment in the configuration menu
   2023-10-20	S.Zamorano	- Folder selection added for Task Scheduler, permit to create or use existing.
+  
+  2024-03-01	S.Zamorano	- Public release supporting all the new scripts for MPARR 2 
 #>
 
 #------------------------------------------------------------------------------  
@@ -171,7 +173,7 @@ function CheckRequiredModules
                 else
                 {
                     Start-Process "C:\Windows\system32\WindowsPowerShell\v1.0\powershell.exe" -Wait -UseNewEnvironment `
-                    -ArgumentList '-Command "&{Write-Host "Installing module AIPService..."; [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Import-Module PowerShellGet; Install-Module AIPService -Force; Write-Host "Exiting Windows PowerShell session..."; Start-Sleep -Seconds 2}"'
+                    -ArgumentList '-Command "&{Write-Host "Installing module AIPService..."; [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Import-Module PowerShellGet; Install-Module AIPService -RequiredVersion 2.0.0.3 -Force; Write-Host "Exiting Windows PowerShell session..."; Start-Sleep -Seconds 2}"'
 
                 }
             }
@@ -193,7 +195,8 @@ function CheckPowerShellVersion
     if ($Host.Version.Major -gt 5)
     {
         Write-Host "Passed" -ForegroundColor Green
-        Write-Host "`tCurrent version is $($Host.Version). Please note that MPARR-RMSData.ps1 script must be executed under PowerShell 5.1."
+        Write-Host "`tCurrent version is $($Host.Version). Please note that MPARR-RMSData2.ps1 script is executed on PowerShell 7"
+		Write-Host "but run services in the background in PowerShell 5.1."
     }
     else
     {
@@ -237,7 +240,10 @@ function ReadNumber([int]$max, [string]$msg, [ref]$option)
 # Connect to Log Analtytics
 function SConnectToLA 
 {
-    #Write-Host "`n*** Executing 'Connect to Log Analytics'.`n"
+    $CONFIGFILE = $PSScriptRoot+"\ConfigFiles\laconfig.json"
+	$config = InitializeLAConfigFile -DirRoot $CONFIGFILE
+
+	#Write-Host "`n*** Executing 'Connect to Log Analytics'.`n"
 
     Write-Host "`nGetting subscriptions..."
     $i = 1
@@ -290,21 +296,25 @@ function SConnectToLA
     $config.LA_CustomerID = ($workspaces[$selection - 1].CustomerId).ToString()
     $config.LA_SharedKey = ($primaryKey).ToString()
 
+	WriteToConfigFile -DirRoot $CONFIGFILE
     Write-Host "`n"
 }
 
 # function to create Azure App
 function NewApp
 {
-    Connect-MgGraph -Scopes "Application.ReadWrite.All", "AppRoleAssignment.ReadWrite.All", "Directory.ReadWrite.All", "User.ReadWrite.All"
+    Connect-MgGraph -Scopes "Application.ReadWrite.All", "AppRoleAssignment.ReadWrite.All", "Directory.ReadWrite.All", "User.ReadWrite.All" -NoWelcome
 
-    $appName = "MPARR-DataCollector"
-    Get-MgApplication -ConsistencyLevel eventual -Count appCount -Filter "startsWith(DisplayName, 'MPARR-DataCollector')" | Out-Null
+	$CONFIGFILE = $PSScriptRoot+"\ConfigFiles\laconfig.json"
+	$config = InitializeLAConfigFile -DirRoot $CONFIGFILE
+	
+    $appName = "MPARR2-DataCollector"
+    Get-MgApplication -ConsistencyLevel eventual -Count appCount -Filter "startsWith(DisplayName, 'MPARR2-DataCollector')" | Out-Null
     if ($appCount -gt 0)
     {   
         $sufix = ((New-Guid) -split "-")[0]
-        $appName = "MPARR-DataCollector-$sufix"
-        Write-Host "'MPARR-DataCollector' app already exists. New name was generated: '$appName'`n"
+        $appName = "MPARR2-DataCollector-$sufix"
+        Write-Host "'MPARR2-DataCollector' app already exists. New name was generated: '$appName'`n"
     }
 
     # ask for the app name
@@ -426,7 +436,7 @@ function NewApp
     $decision = $Host.UI.PromptForChoice("", "Default certificate name is '$certName'. Do you want to proceed or change the name?", $choices, 0)
     if ($decision -eq 1)
     {
-        $ok = $false
+        #$ok = $false
         do 
         {
             $newName = Read-Host "Please enter the new name"
@@ -481,7 +491,7 @@ function NewApp
     $decision = $Host.UI.PromptForChoice("", "Default client description for secret key is '$keyName'. Do you want to proceed or change the name?", $choices, 0)
     if ($decision -eq 1)
     {
-        $ok = $false
+        #$ok = $false
         do 
         {
             $newName = Read-Host "Please enter the new name"
@@ -510,6 +520,8 @@ function NewApp
     $config.AppClientID = $app.AppId
     $config.CertificateThumb = $cert.Thumbprint
     $config.ClientSecretValue = $secret.SecretText
+	
+	WriteToConfigFile -DirRoot $CONFIGFILE
 
     Remove-Variable cert
     Remove-Variable certBase64
@@ -518,15 +530,20 @@ function NewApp
 
 function GetTenantInfo
 {
-    $tenant = Get-MgDomain
+    $CONFIGFILE = $PSScriptRoot+"\ConfigFiles\laconfig.json"
+	$config = InitializeLAConfigFile -DirRoot $CONFIGFILE
+	$tenant = Get-MgDomain
     $config.TenantGUID = (Get-MgContext).TenantId
     $config.TenantDomain = ($tenant | Where-Object IsDefault).Id
     $config.OnmicrosoftURL = ($tenant | Where-Object IsInitial).Id
+	WriteToConfigFile -DirRoot $CONFIGFILE
 }
 
 function SelectCloud
 {
-    $choices = '&Commercial', '&GCC', 'GCC&H', '&DOD'
+    $CONFIGFILE = $PSScriptRoot+"\ConfigFiles\laconfig.json"
+	$config = InitializeLAConfigFile -DirRoot $CONFIGFILE
+	$choices = '&Commercial', '&GCC', 'GCC&H', '&DOD'
     $decision = $Host.UI.PromptForChoice("", "`nPlease select cloud version:", $choices, 0)
     switch ($decision) {
         0 {$config.Cloud = "Commercial"; break}
@@ -534,13 +551,18 @@ function SelectCloud
         2 {$config.Cloud = "GCCH"; break}
         3 {$config.Cloud = "DOD"; break}
     }
+	WriteToConfigFile -DirRoot $CONFIGFILE
 }
 
 # function to choose destination directory for logs
 function SelectLogPath
 {
-    $choices  = '&Yes', '&No'
-    $decision = $Host.UI.PromptForChoice("", "Default locations for logs are '$($config.RMSLogs)' and '$($config.OutPutLogs)'. Do you want change the location?", $choices, 1)
+    $CONFIGFILE = $PSScriptRoot+"\ConfigFiles\laconfig.json"
+	$LogsDirectory = $PSScriptRoot+"\Logs\"
+	$RMSLogsDirectory = $PSScriptRoot+"\RMSLogs\"
+	$config = InitializeLAConfigFile -DirRoot $CONFIGFILE
+	$choices  = '&Yes', '&No'
+    $decision = $Host.UI.PromptForChoice("", "Default locations for logs are '$($RMSLogsDirectory)' and '$($LogsDirectory)'. Do you want change the location?", $choices, 1)
     if ($decision -eq 0)
     {
         [System.Reflection.Assembly]::Load("System.Windows.Forms") | Out-Null
@@ -564,20 +586,185 @@ function SelectLogPath
             $config.RMSLogs = $folder.SelectedPath + "\"
             Write-Host "`nRMS logs set to '$($config.RMSLogs)'."
         }
-    }
+    }elseif ($decision -eq 1)
+	{
+		Write-Host "Same default folders was selected."
+		if(-Not (Test-Path $LogsDirectory ))
+		{
+			Write-Host "Export data directory is missing, creating a new folder called Logs"
+			New-Item -ItemType Directory -Force -Path "$PSScriptRoot\Logs" | Out-Null
+		}
+		if(-Not (Test-Path $RMSLogsDirectory ))
+		{
+			Write-Host "Export data directory is missing, creating a new folder called RMSLogs"
+			New-Item -ItemType Directory -Force -Path "$PSScriptRoot\RMSLogs" | Out-Null
+		}
+		$config.OutPutLogs = $LogsDirectory
+		$config.RMSLogs = $RMSLogsDirectory
+	}
+	
+	WriteToConfigFile -DirRoot $CONFIGFILE
+}
+
+function InitializeLAConfigFile($DirRoot)
+{
+	# read config file
+    $configfile = "$DirRoot"
+	
+	if(-Not (Test-Path $configfile ))
+	{
+		Write-Host "Export data directory is missing, creating a new folder called ConfigFiles"
+		New-Item -ItemType Directory -Force -Path "$PSScriptRoot\ConfigFiles" | Out-Null
+	}
+	
+	if (-not (Test-Path -Path $configfile))
+    {
+		$config = [ordered]@{
+		EncryptedKeys =  "False"
+		AppClientID = ""
+		ClientSecretValue = ""
+		TenantGUID = ""
+		TenantDomain = ""
+		LA_CustomerID =  ""
+		LA_SharedKey =  ""
+		CertificateThumb = ""
+		OnmicrosoftURL = ""
+		RMSLogs = "c:\APILogs\RMSLogs\"
+		OutPutLogs = "c:\APILogs\"
+		Cloud = "Commercial"
+		MicrosoftEntraConfig = "Not Set"
+		ExportToEventHub = "False"
+		EventHubNamespace = ""
+		EventHub = ""
+		}
+		return $config
+    }else
+	{
+		$json = Get-Content -Raw -Path $configfile
+		[PSCustomObject]$configfile = ConvertFrom-Json -InputObject $json
+	
+		$config = [ordered]@{
+		EncryptedKeys = "$($configfile.EncryptedKeys)"
+		AppClientID = "$($configfile.AppClientID)"
+		ClientSecretValue = "$($configfile.ClientSecretValue)"
+		TenantGUID = "$($configfile.TenantGUID)"
+		TenantDomain = "$($configfile.TenantDomain)"
+		LA_CustomerID = "$($configfile.LA_CustomerID)"
+		LA_SharedKey = "$($configfile.LA_SharedKey)"
+		CertificateThumb = "$($configfile.CertificateThumb)"
+		OnmicrosoftURL = "$($configfile.OnmicrosoftURL)"
+		RMSLogs = "$($configfile.RMSLogs)"
+		OutPutLogs = "$($configfile.OutPutLogs)"
+		Cloud = "$($configfile.Cloud)"
+		MicrosoftEntraConfig = "$($configfile.MicrosoftEntraConfig)"
+		ExportToEventHub = "$($configfile.ExportToEventHub)"
+		EventHubNamespace = "$($configfile.EventHubNamespace)"
+		EventHub = "$($configfile.EventHub)"
+		}
+		return $config
+	}
 }
 
 # write configuration data to json file
 function WriteToJsonFile
 {
-    if (Test-Path "laconfig.json")
+    $BackupPath = $PSScriptRoot+"\BackupScripts"
+	if(-Not (Test-Path $BackupPath ))
+	{
+		Write-Host "Export data directory is missing, creating a new folder called BackupScripts"
+		New-Item -ItemType Directory -Force -Path "$PSScriptRoot\BackupScripts" | Out-Null
+	}
+	
+	$MPARRConfigFolder = "$PSScriptRoot\ConfigFiles\"
+	$MPARRConfigFile = "$MPARRConfigFolder"+"laconfig.json"
+	if (Test-Path -Path $MPARRConfigFile)
     {
         $date = Get-Date -Format "yyyyMMddHHmmss"
-        Move-Item "laconfig.json" "laconfig_$date.json"
-        Write-Host "`nThe old config file moved to 'laconfig_$date.json'"
+		$BackupFile = $PSScriptRoot+"\BackupScripts\"+"laconfig_"+$date+".backup.json"
+        Move-Item $MPARRConfigFile $BackupFile
+        Write-Host "`nThe old config file moved to 'laconfig_$date.backup.json'"
     }
-    $config | ConvertTo-Json | Out-File "laconfig.json"
+    $config | ConvertTo-Json | Out-File $MPARRConfigFile
     Write-Host "Setup completed. New config file was created." -ForegroundColor Green
+}
+
+function UpdateMPARREventHub
+{
+	Clear-Host
+	cls
+	
+	$CONFIGFILE = "$PSScriptRoot\ConfigFiles\laconfig.json"
+	$json = Get-Content -Raw -Path $CONFIGFILE
+	[PSCustomObject]$config = ConvertFrom-Json -InputObject $json
+	
+	Write-Host "`n`n----------------------------------------------------------------------------------------"
+	Write-Host "`nMPARR Event Hub configuration menu!" -ForegroundColor DarkGreen
+	Write-Host "If you enable Event Hub connector Logs Analytics connector will not be work by default." -ForegroundColor DarkYellow
+	Write-Host "The current menu permit configure the connector to be used manually," -ForegroundColor DarkGreen
+	Write-Host "to do that you can execute all the scripts using the attribute -ExportToEventHub" -ForegroundColor DarkGreen
+	Write-Host "The current configuration is:"
+	Write-Host "`tExport to Event Hub enabled `t:`t"$config.ExportToEventHub
+	Write-Host "`tEvent Hub Namespace is set to `t:`t"$config.EventHubNamespace
+	Write-Host "`tEvent Hub Instance is set to `t:`t"$config.EventHub
+	Write-Host "`n----------------------------------------------------------------------------------------`n`n"
+	
+	$choices  = '&Yes', '&No'
+	$decision = $Host.UI.PromptForChoice("", "Do you want to change the current configuration?", $choices, 1)
+	
+	if ($decision -eq 0)
+	{
+		Write-Host "`nYou decide to change the current configuration."
+		Write-Host "You can change the configuration at any time using this option."
+		Write-Host "Remember that setting Event Hub to run automatically disable the option to send the data to Logs Analytics."
+		Write-Host "All the scripts can be executed manually to send the data to Event Hub using the attribute -ExportToEventHub"
+		Write-Host "As a sample: .\MPARR_Collector2.ps1 -ExportToEventHub"
+		$ExecutionChoices  = '&Automatically', '&Manual'
+		$ExecutionDecision = $Host.UI.PromptForChoice("", "`nDo you want to change the current configuration?", $ExecutionChoices, 1)
+		if ($ExecutionDecision -eq 0)
+		{
+			$config.ExportToEventHub = "True"
+		}elseif ($ExecutionDecision -eq 1)
+		{
+			$config.ExportToEventHub = "False"
+		}
+		
+		Write-Host "`n"
+		do 
+        {
+            $newEventHubName = Read-Host "Please enter the Event Hub Namespace"
+        }
+        until ($newEventHubName -ne "")
+        $config.EventHubNamespace = $newEventHubName 
+		Write-Host "The Event Hub Namespace established is :" -NoNewLine
+		Write-Host "`t$newEventHubName." -ForegroundColor Green
+		
+		Write-Host "`n"
+		do 
+        {
+            $newEventHubInstance = Read-Host "Please enter the Event Hub Instance"
+        }
+        until ($newEventHubInstance -ne "")
+        $config.EventHub = $newEventHubInstance 
+		Write-Host "The Event Hub Instance established is  :" -NoNewLine
+		Write-Host "`t$newEventHubInstance." -ForegroundColor Green
+		
+		$config | ConvertTo-Json | Out-File $CONFIGFILE
+		Start-Sleep -s 1
+		
+	}else
+	{
+		return
+	}
+	
+	Write-Host "New configuration for Event Hub added to laconfig.json file"
+	Write-Host "Press any key to continue..."
+	$key = ([System.Console]::ReadKey($true)) | Out-Null
+}
+
+function WriteToConfigFile($DirRoot)
+{
+    $config | ConvertTo-Json | Out-File "$DirRoot"
+    Write-Host "Setup completed. New config file was created." -ForegroundColor Yellow
 }
 
 function CreateScheduledTaskFolder
@@ -611,7 +798,7 @@ function CreateScheduledTaskFolder
     $decision = $Host.UI.PromptForChoice("", "Default task Scheduler Folder is '$MPARRTSFolder'. Do you want to Proceed, Change the name or use Existing one?", $choices, 0)
     if ($decision -eq 1)
     {
-        $ok = $false
+        #$ok = $false
         do 
         {
             $newName = Read-Host "Please enter the new name for the Task Scheduler folder"
@@ -667,7 +854,7 @@ function CreateMPARRCollectorTask
 
     #create task
     $trigger = New-ScheduledTaskTrigger -Once -At $startTime -RepetitionInterval (New-TimeSpan -Minutes $nearestMinutes)
-    $action = New-ScheduledTaskAction -Execute "`"$PSHOME\pwsh.exe`"" -Argument ".\MPARR_Collector.ps1" -WorkingDirectory $PSScriptRoot
+    $action = New-ScheduledTaskAction -Execute "`"$PSHOME\pwsh.exe`"" -Argument ".\MPARR_Collector2.ps1" -WorkingDirectory $PSScriptRoot
     $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopOnIdleEnd -AllowStartIfOnBatteries `
          -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 1)
 
@@ -726,7 +913,7 @@ function CreateMPARRRMSDataTask
 
 function CreateMPARRUsersTask
 {
-	# MPARR-AzureADUsers script
+	# MPARR-MicrosoftEntraUsers script
     $taskName = "MPARR-MicrosoftEntraUsers"
 	
 	# Call function to set a folder for the task on Task Scheduler
@@ -749,9 +936,7 @@ function CreateMPARRUsersTask
 
     #create task
     $trigger = New-ScheduledTaskTrigger -Once -At $startTime -RepetitionInterval (New-TimeSpan -Days $validDays)
-    #$filePath = Join-Path $PSScriptRoot "MPARR-AzureADUsers.ps1"
-    #$workingDir = "{0}" -f ("$PSScriptRoot", "`"$PSScriptRoot`"")[$PSScriptRoot.Contains(" ")]
-    $action = New-ScheduledTaskAction -Execute "`"$PSHOME\pwsh.exe`"" -Argument ".\MPARR-AzureADUsers.ps1" -WorkingDirectory $PSScriptRoot
+    $action = New-ScheduledTaskAction -Execute "`"$PSHOME\pwsh.exe`"" -Argument ".\MPARR-MicrosoftEntraUsers.ps1" -WorkingDirectory $PSScriptRoot
     $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopOnIdleEnd -AllowStartIfOnBatteries `
          -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 1)
 
@@ -765,11 +950,14 @@ function CreateMPARRUsersTask
         -RunLevel Highest -TaskPath $taskFolder -ErrorAction Stop | Out-Null
         Write-Host "`nScheduled task named '$taskName' was created.`nFor security reasons you have to specify run as account manually.`n" -ForegroundColor Yellow
     }
+	Write-Host "`nYou need to execute this script at least once manually." -ForegroundColor DarkRed
+	Write-Host "`nPress any key to continue..."
+	$key = ([System.Console]::ReadKey($true)) | Out-Null
 }
 
 function CreateMPARRDomainsTask
 {
-	# MPARR-AzureADDomains script
+	# MPARR-MicrosoftEntraDomains script
     $taskName = "MPARR-MicrosoftEntraDomains"
 	
 	# Call function to set a folder for the task on Task Scheduler
@@ -792,9 +980,7 @@ function CreateMPARRDomainsTask
 
     #create task
     $trigger = New-ScheduledTaskTrigger -Once -At $startTime -RepetitionInterval (New-TimeSpan -Days $validDays)
-    #$filePath = Join-Path $PSScriptRoot "MPARR-AzureADDomains.ps1"
-    #$workingDir = "{0}" -f ("$PSScriptRoot", "`"$PSScriptRoot`"")[$PSScriptRoot.Contains(" ")]
-    $action = New-ScheduledTaskAction -Execute "`"$PSHOME\pwsh.exe`"" -Argument ".\MPARR-AzureADDomains.ps1" -WorkingDirectory $PSScriptRoot
+    $action = New-ScheduledTaskAction -Execute "`"$PSHOME\pwsh.exe`"" -Argument ".\MPARR-MicrosoftEntraDomains.ps1" -WorkingDirectory $PSScriptRoot
     $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopOnIdleEnd -AllowStartIfOnBatteries `
          -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 1)
 
@@ -812,7 +998,7 @@ function CreateMPARRDomainsTask
 
 function CreateMPARRRolesTask
 {
-	# MPARR-AzureADRoles script
+	# MPARR-MicrosoftEntraRoles script
     $taskName = "MPARR-MicrosoftEntraRoles"
 	
 	# Call function to set a folder for the task on Task Scheduler
@@ -835,9 +1021,7 @@ function CreateMPARRRolesTask
 
     #create task
     $trigger = New-ScheduledTaskTrigger -Once -At $startTime -RepetitionInterval (New-TimeSpan -Days $validDays)
-    #$filePath = Join-Path $PSScriptRoot "MPARR-AzureADRoles.ps1"
-    #$workingDir = "{0}" -f ("$PSScriptRoot", "`"$PSScriptRoot`"")[$PSScriptRoot.Contains(" ")]
-    $action = New-ScheduledTaskAction -Execute "`"$PSHOME\pwsh.exe`"" -Argument ".\MPARR-AzureADRoles.ps1" -WorkingDirectory $PSScriptRoot
+    $action = New-ScheduledTaskAction -Execute "`"$PSHOME\pwsh.exe`"" -Argument ".\MPARR-MicrosoftEntraRoles.ps1" -WorkingDirectory $PSScriptRoot
     $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopOnIdleEnd -AllowStartIfOnBatteries `
          -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 1)
 
@@ -1116,7 +1300,8 @@ function SelfSignScripts
 			$cert = Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert | Where-Object {$_.Thumbprint -eq $certificates[$selection - 1].Thumbprint}
 			
 			#Sign MPARR Scripts
-			$files = Get-ChildItem -Path .\MPARR*
+			$files = Get-ChildItem -Path .\MPARR*.ps1
+			$SupportFiles = Get-ChildItem -Path .\ConfigFiles\MPARR*.ps1
 			
 			foreach($file in $files)
 			{
@@ -1124,6 +1309,16 @@ function SelfSignScripts
 				Write-Host "$($file.Name)" -ForegroundColor Green
 				Set-AuthenticodeSignature -FilePath ".\$($file.Name)" -Certificate $cert
 			}
+			
+			foreach($SupportFile in $SupportFiles)
+			{
+				Write-Host "`Signing..."
+				Write-Host "$($SupportFile.Name)" -ForegroundColor Green
+				Set-AuthenticodeSignature -FilePath ".\ConfigFiles\$($SupportFile.Name)" -Certificate $cert
+			}
+			
+			Write-Host "`nPress any key to continue..."
+			$key = ([System.Console]::ReadKey($true))
 		}
 	}
 }
@@ -1200,6 +1395,8 @@ function EncryptSecrets
 
     Write-Host "Warning!" -ForegroundColor Yellow
     Write-Host "Please note that encrypted keys can be decrypted only on this machine, using the same account." -ForegroundColor Yellow
+	Write-Host "`nPress any key to continue..."
+	$key = ([System.Console]::ReadKey($true)) | Out-Null
 }
 
 function MicrosoftLicensing($LicenseOption)
@@ -1207,6 +1404,15 @@ function MicrosoftLicensing($LicenseOption)
 	$MSProductsTableName = "MSProducts"
 	$CommandPath = $PSScriptRoot
 	$CommandSupportInfoFolder = $CommandPath+"\Support\"
+	if(-Not (Test-Path $CommandSupportInfoFolder ))
+	{
+		Write-Host "Export data directory is missing, creating a new folder called Support"
+		New-Item -ItemType Directory -Force -Path "$PSScriptRoot\Support" | Out-Null
+		$M365LicenseURI = "https://download.microsoft.com/download/e/3/e/e3e9faf2-f28b-490a-9ada-c6089a1fc5b0"
+		$M365FileName = "Product names and service plan identifiers for licensing.csv"
+		$SupportFolder = "$PSScriptRoot\Support"
+		$result = Invoke-WebRequest -Uri "$M365LicenseURI/$M365FileName" -OutFile $SupportFolder
+	}
 	$CommandScript = "MPARR-ExportCSV2LA.ps1"
 	$CommandData = gci $CommandSupportInfoFolder -Filter *.csv | select -last 1
 	if($LicenseOption -eq 1)
@@ -1249,13 +1455,15 @@ function MicrosoftLicensing($LicenseOption)
 		Write-Host "File updated at $SupportFolder"
 		Start-Sleep -s 3
 	}
+	Write-Host "Press any key to continue..."
+	$key = ([System.Console]::ReadKey($true))
 }
 
 function UpdateMPARREntraApp
 {
 	Connect-MgGraph -Scopes "Application.ReadWrite.All", "AppRoleAssignment.ReadWrite.All", "Directory.ReadWrite.All", "User.ReadWrite.All" -NoWelcome
 	Clear-Host
-	cls
+	
 	Write-Host "`n`n----------------------------------------------------------------------------------------"
 	Write-Host "`nMPARR Microsoft Entra App update!" -ForegroundColor DarkGreen
 	Write-Host "This menu helps to validate that the Microsoft Entra App previously created have all the API permissions required." -ForegroundColor DarkGreen
@@ -1263,14 +1471,14 @@ function UpdateMPARREntraApp
 	Write-Host "`n----------------------------------------------------------------------------------------"
 	
 	Write-Host "`nYou will prompted to select the right path where the laconfig.json file is located."
-	Write-Host "Press any key to continue..." -NoNewLine
-	$Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+	Write-Host "Press any key to continue..."
+	$key = ([System.Console]::ReadKey($true))
 	
                 
 	#Here you start selecting each folder
 	[System.Reflection.Assembly]::Load("System.Windows.Forms") | Out-Null
 	$file = New-Object System.Windows.Forms.OpenFileDialog
-	# Start selecting EMD Upload Agent location  
+	# Start selecting laconfig.json location  
 	$file.Title = "Select folder where laconfig.json is located"
 	$file.InitialDirectory = 'ProgramFiles'
 	$file.Filter = 'MPARR Config file|laconfig.json'
@@ -1282,63 +1490,672 @@ function UpdateMPARREntraApp
 		[PSCustomObject]$config = ConvertFrom-Json -InputObject $json
 		$AppID = $config.AppClientID
 	}
-	$folder = New-Object System.Windows.Forms.FolderBrowserDialog
-	$folder.UseDescriptionForTitle = $true
 	
-	$ObjectId = (Get-MgApplicationByAppId -AppId $AppID).Id
-	$resources = (Get-MgApplication -ApplicationId $ObjectId).RequiredResourceAccess.ResourceAccess.Id
-	foreach($i in $resources)
-	{
-		if($i -eq "230c1aed-a721-4c5d-9cb4-a90514e508ef")
-		{
-			Write-Host "Microsoft Graph API new permission..." -NoNewLine
-			Write-Host "`t`t`tPassed!!!" -ForegroundColor Green
-			Write-Host "Press any key to continue..." -NoNewLine
-			$Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
-		}else
-		{
-			Write-Host "Microsoft Graph API permission..." -NoNewLine
-			Write-Host "`t`t`tNot Found!" -ForegroundColor Red
-			Write-Host "Press any key to continue..." -NoNewLine
-			$Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
-			# app parameters and API permissions definition
-			$params = @{
-				RequiredResourceAccess = @(
-					@{
-						ResourceAppId = "00000003-0000-0000-c000-000000000000"
-						ResourceAccess = @(
-							@{
-								Id = "230c1aed-a721-4c5d-9cb4-a90514e508ef"
-								Type = "Role"
-							}
-						)
-					}
-			
-				)
-			}
-			$UpdateApp = Update-MgApplicationByAppId -AppId $AppID @params
-		
-		}
-	}
+    $filter = "AppId eq '$AppId'"
+    $servicePrincipal = Get-MgServicePrincipal -All -Filter $filter
+    $roles = Get-MgServicePrincipalAppRoleAssignment -ServicePrincipalId ($servicePrincipal.Id)
+    if ($roles.AppRoleId -notcontains "230c1aed-a721-4c5d-9cb4-a90514e508ef")
+    {
+        Write-Host "Microsoft Graph API permission 'Reports.Read.All'" -NoNewLine
+        Write-Host "`tNot Found!" -ForegroundColor Red
+		Write-Host "App ID used:" $AppId
+        Write-Host "Press any key to continue..."
+        $key = ([System.Console]::ReadKey($true))
+        Write-Host "Adding permission"
+        # app parameters and API permissions definition
+        $params = @{
+            AppId = $AppID
+            RequiredResourceAccess = @(
+                @{
+                    ResourceAppId = "00000003-0000-0000-c000-000000000000"
+                    ResourceAccess = @(
+                        @{
+                            Id = "230c1aed-a721-4c5d-9cb4-a90514e508ef"
+                            Type = "Role"
+                        }
+                    )
+                }
+        
+            )
+        }
+        Update-MgApplicationByAppId @params
+        Write-Host "Permission added." -ForegroundColor Green
+        Write-Host "`nPlease go to the Azure portal to manually grant admin consent:"
+        Write-Host "https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationMenuBlade/~/CallAnAPI/appId/$($AppId)`n" -ForegroundColor Cyan    
+    }
+    else 
+    {
+        Write-Host "Microsoft Graph API permission..." -NoNewLine
+        Write-Host "`tPermission already in place" -ForegroundColor Green
+    }
 
-	Write-Host "Press any key to continue..." -NoNewLine
-	$Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+	Write-Host "Press any key to continue..." 
+    $key = ([System.Console]::ReadKey($true))
 }
 
-function MigrateMPARR
+function MPARRFolderStructure
 {
 	Clear-Host
 	cls
 	Write-Host "`n`n----------------------------------------------------------------------------------------"
-	Write-Host "`nMPARR Microsoft Entra App update!" -ForegroundColor DarkGreen
-	Write-Host "This menu helps to validate that the Microsoft Entra App previously created have all the API permissions required." -ForegroundColor DarkGreen
-	Write-Host "You will need to consent permissions Under Microsoft Entra portal to the app and the new permissions." -ForegroundColor DarkGreen
+	Write-Host "`nMPARR configuration to set folder structure to prepare migration!" -ForegroundColor DarkGreen
+	Write-Host "This menu helps to validate the folder structure required for migration." -ForegroundColor DarkGreen
+	Write-Host "`n----------------------------------------------------------------------------------------"
+	
+	Write-Host "`nYou will prompted to select the right path where MPARR will be allocated."
+	Write-Host "Press any key to continue..." -NoNewLine
+	$Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown") | Out-Null
+	Write-Host "`n"
+	
+	[System.Reflection.Assembly]::Load("System.Windows.Forms") | Out-Null
+	$folder = New-Object System.Windows.Forms.FolderBrowserDialog
+	$folder.UseDescriptionForTitle = $true
+	
+	# Select MPARR data folder
+	$folder.Description = "Select folder where MPARR solution data will be located"
+	$folder.rootFolder = 'Recent'
+	if ($folder.ShowDialog() -eq "OK")
+	{
+		$MPARRRootFolder = $folder.SelectedPath 
+	}
+	
+	$BackupFolder = $MPARRRootFolder+"\BackupScripts"
+	$CertificateFolder = $MPARRRootFolder+"\Certs"
+	$ConfigurationFolder = $MPARRRootFolder+"\ConfigFiles"
+	$MPARRLogs = $MPARRRootFolder+"\Logs"
+	$MPARRRMSLogs = $MPARRRootFolder+"\RMSLogs"
+	$SupportFolder = $MPARRRootFolder+"\Support"
+	
+	if(-not(Test-Path -Path $BackupFolder))
+	{
+		Write-Host "Backup data directory is missing, creating a new folder called BackupScripts" -ForegroundColor Blue
+		New-Item -ItemType Directory -Force -Path "$MPARRRootFolder\BackupScripts" | Out-Null
+	}else
+	{
+		Write-Host "Folder BackupScripts is already available!" -ForegroundColor Green
+	}
+	
+	if(-not(Test-Path -Path $CertificateFolder))
+	{
+		Write-Host "Certificate data directory is missing, creating a new folder called Certs" -ForegroundColor Blue
+		New-Item -ItemType Directory -Force -Path "$MPARRRootFolder\Certs" | Out-Null
+	}else
+	{
+		Write-Host "Folder Certs is already available!" -ForegroundColor Green
+	}
+	
+	if(-not(Test-Path -Path $ConfigurationFolder))
+	{
+		Write-Host "Configuration Files directory is missing, creating a new folder called ConfigFiles" -ForegroundColor Blue
+		New-Item -ItemType Directory -Force -Path "$MPARRRootFolder\ConfigFiles" | Out-Null
+	}else
+	{
+		Write-Host "Folder ConfigFiles is already available!" -ForegroundColor Green
+	}
+
+	if(-not(Test-Path -Path $MPARRLogs))
+	{
+		Write-Host "MPARR Logs directory is missing, creating a new folder called Logs" -ForegroundColor Blue
+		New-Item -ItemType Directory -Force -Path "$MPARRRootFolder\Logs" | Out-Null
+	}else
+	{
+		Write-Host "Folder Logs is already available!" -ForegroundColor Green
+	}
+	
+	if(-not(Test-Path -Path $MPARRRMSLogs))
+	{
+		Write-Host "MPARR Logs directory is missing, creating a new folder called RMSLogs" -ForegroundColor Blue
+		New-Item -ItemType Directory -Force -Path "$MPARRRootFolder\RMSLogs" | Out-Null
+	}else
+	{
+		Write-Host "Folder RMSLogs is already available!" -ForegroundColor Green
+	}
+	
+	if(-not(Test-Path -Path $SupportFolder))
+	{
+		Write-Host "Support directory is missing, creating a new folder called Support" -ForegroundColor Blue
+		New-Item -ItemType Directory -Force -Path "$MPARRRootFolder\Support" | Out-Null
+	}else
+	{
+		Write-Host "Folder Support is already available!" -ForegroundColor Green
+	}
+	Write-Host "`n"
+}
+
+function MPARRCopyFiles
+{
+	Clear-Host
+	cls
+	Write-Host "`n`n----------------------------------------------------------------------------------------"
+	Write-Host "`nMPARR configuration to copy files from previous configuration!" -ForegroundColor DarkGreen
+	Write-Host "This menu helps to copy all the files to the new folder structure required for migration." -ForegroundColor DarkGreen
+	Write-Host "`n----------------------------------------------------------------------------------------"
+	
+	Write-Host "`nYou will prompted to select the right path where MPARR is located."
+	Write-Host "Press any key to continue..." -NoNewLine
+	$Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown") | Out-Null
+	Write-Host "`n"
+	
+	# Select MPARR source data folder
+	[System.Reflection.Assembly]::Load("System.Windows.Forms") | Out-Null
+	$folder = New-Object System.Windows.Forms.FolderBrowserDialog
+	$folder.UseDescriptionForTitle = $true
+	
+	Add-Type -AssemblyName PresentationCore,PresentationFramework
+	$msgBody = "Please, take care to select the right folder where MPARR is installed - SOURCE -"
+	[System.Windows.MessageBox]::Show($msgBody) |Out-Null
+	
+	$folder.Description = "Select folder where MPARR solution is currently installed"
+	$folder.rootFolder = 'Recent'
+	if ($folder.ShowDialog() -eq "OK")
+	{
+		$MPARRSourceFolder = $folder.SelectedPath 
+	}
+	
+	# Select MPARR destination data folder
+	$folderDestination = New-Object System.Windows.Forms.FolderBrowserDialog
+	$folderDestination.UseDescriptionForTitle = $true
+	
+	$msgBody2 = "Please, take care to select the right folder where MPARR will be installed - DESTINATION -"
+	[System.Windows.MessageBox]::Show($msgBody2) |Out-Null
+	
+	$folderDestination.Description = "Select folder where MPARR solution will be installed"
+	$folderDestination.rootFolder = 'Recent'
+	if ($folderDestination.ShowDialog() -eq "OK")
+	{
+		$MPARRDestinationFolder = $folderDestination.SelectedPath 
+	}
+	
+	$MPARRConfigFile = $MPARRSourceFolder+"\laconfig.json"
+	$MPARRSchemasFile = $MPARRSourceFolder+"\schemas.json"
+	$CertificateFolder = $MPARRSourceFolder+"\Certs"
+	$ConfigurationFolder = $MPARRSourceFolder+"\ConfigFiles"
+	$SupportFolder = $MPARRSourceFolder+"\Support"
+	
+	$ConfigFilesFolder = $MPARRDestinationFolder+"\ConfigFiles"
+	$CertsFolder = $MPARRDestinationFolder+"\Certs"
+	$LogsFolder = $MPARRDestinationFolder+"\Logs"
+	$RMSLogsFolder = $MPARRDestinationFolder+"\RMSLogs"
+	$SupportDestFolder = $MPARRDestinationFolder+"\Support"
+	
+	if(-not(Test-Path -Path $MPARRConfigFile))
+	{
+		Write-Host "laconfig.json file is not located on the root folder, please check that you selected the right folder." -ForegroundColor DarkYellow
+		Write-Host "Please check that the laconfig.json file is located at the root folder."
+		Write-Host "Press any key to continue..." -NoNewLine
+		$Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown") | Out-Null
+		MPARRCopyFiles
+	}else
+	{
+		Copy-Item $MPARRConfigFile -Destination $ConfigFilesFolder
+		Write-Host "laconfig.json file copied to : "$ConfigFilesFolder -ForegroundColor Green
+	}
+	
+	if(-not(Test-Path -Path $CertificateFolder))
+	{
+		Write-Host "Certificate folder was not found, nothing will be copied from this path." -ForegroundColor DarkYellow
+	}else
+	{
+		$CertSource = $CertificateFolder+"\*"
+		Copy-Item -Path $CertSource -Destination $CertsFolder -Recurse
+		Write-Host "Content from Cert folder copied to : "$CertsFolder -ForegroundColor Green
+	}
+	
+	if(-not(Test-Path -Path $MPARRSchemasFile))
+	{
+		Write-Host "schemas.json file was not found, nothing will be copied from this path." -ForegroundColor DarkYellow
+	}else
+	{
+		Copy-Item $MPARRSchemasFile -Destination $ConfigFilesFolder
+		Write-Host "schemas.json file copied to : "$ConfigFilesFolder -ForegroundColor Green
+	}
+
+	if(-not(Test-Path -Path $ConfigurationFolder))
+	{
+		Write-Host "ConfigFiles directory is missing, nothing will be copied from this path." -ForegroundColor DarkYellow
+	}else
+	{
+		$ConfigFilesSource = $ConfigurationFolder+"\*"
+		Copy-Item -Path $ConfigFilesSource -Destination $ConfigFilesFolder -Recurse
+		Write-Host "Content from ConfigFiles folder copied to : "$ConfigFilesFolder -ForegroundColor Green
+	}
+	
+	$CONFIGFILE = $MPARRConfigFile 
+	$json = Get-Content -Raw -Path $CONFIGFILE
+	[PSCustomObject]$config = ConvertFrom-Json -InputObject $json
+	$LogsRootFolder = $config.OutPutLogs
+	$RMSLogsRootFolder = $config.RMSLogs
+	
+	if(-not(Test-Path -Path $LogsRootFolder))
+	{
+		Write-Host "MPARR Logs directory is missing, nothing will be copied from this path." -ForegroundColor DarkYellow
+		Write-Host "Please check laconfig.json and the path set for OutPutLogs" -ForegroundColor Red
+	}else
+	{
+		$LogsSource = $LogsRootFolder+"\*"
+		Copy-Item -Path $LogsSource -Destination $LogsFolder -Recurse
+		Write-Host "Content from Logs folder copied to : "$LogsFolder -ForegroundColor Green
+	}
+	
+	if(-not(Test-Path -Path $RMSLogsRootFolder))
+	{
+		Write-Host "MPARR RMS Logs directory is missing, nothing will be copied from this path." -ForegroundColor DarkYellow
+		Write-Host "Please check laconfig.json and the path set for RMSLogs" -ForegroundColor Red
+	}else
+	{
+		$RMSLogsSource = $RMSLogsRootFolder+"\*"
+		Copy-Item -Path $RMSLogsSource -Destination $RMSLogsFolder -Recurse
+		Write-Host "Content from RMSLogs folder copied to : "$RMSLogsFolder -ForegroundColor Green
+	}
+	
+	if(-not(Test-Path -Path $SupportFolder))
+	{
+		Write-Host "Support directory is missing, nothing will be copied from this path." -ForegroundColor DarkYellow
+	}else
+	{
+		$SupportFolderSource = $SupportFolder+"\*"
+		Copy-Item -Path $SupportFolderSource -Destination $SupportDestFolder -Recurse
+		Write-Host "Content from Support folder copied to : "$SupportDestFolder -ForegroundColor Green
+	}
+	
+	$MPARRFiles = $MPARRSourceFolder+"\MPARR*"
+	Copy-Item -Path $MPARRFiles -Destination $MPARRDestinationFolder -Recurse -Force
+	Write-Host "All MPARR scripts copied to : "$SupportDestFolder -ForegroundColor Green
+	
+	###Update laconfig.json file copied to the new MPARR installation
+	$ConfigDestinationFile = "$MPARRDestinationFolder\ConfigFiles\laconfig.json"  
+    $MPARRjson = Get-Content -Raw -Path $ConfigDestinationFile
+    [PSCustomObject]$MPARRconfig = ConvertFrom-Json -InputObject $MPARRjson
+	$MPARRconfig.RMSLogs = $RMSLogsFolder+"\"
+	$MPARRconfig.OutPutLogs = $LogsFolder+"\"
+	$MPARRconfig | ConvertTo-Json | Out-File $ConfigDestinationFile
+	Write-Host "laconfig.json updated at the destination folder" -ForegroundColor Green
+	Start-Sleep -s 3
+	
+	Write-Host "`n"
+}
+
+function MPARRCopyConfigFilesOnly
+{
+	Clear-Host
+	cls
+	
+	Write-Host "`n`n----------------------------------------------------------------------------------------"
+	Write-Host "`nMPARR config files migration!" -ForegroundColor DarkGreen
+	Write-Host "This menu helps to migrate laconfig and schemas from a previous MPARR installation and to apply any new change required." -ForegroundColor DarkGreen
+	Write-Host "`n----------------------------------------------------------------------------------------"
+	
+	Write-Host "`nYou will prompted to select the right path where MPARR is located."
+	Write-Host "Press any key to continue..." -NoNewLine
+	$Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown") | Out-Null
+	Write-Host "`n"
+	
+	# Select MPARR source data folder
+	[System.Reflection.Assembly]::Load("System.Windows.Forms") | Out-Null
+	$folder = New-Object System.Windows.Forms.FolderBrowserDialog
+	$folder.UseDescriptionForTitle = $true
+	
+	Add-Type -AssemblyName PresentationCore,PresentationFramework
+	$msgBody = "Please, take care to select the right folder where MPARR is installed - SOURCE -"
+	[System.Windows.MessageBox]::Show($msgBody) |Out-Null
+	
+	$folder.Description = "Select folder where MPARR solution is currently installed"
+	$folder.rootFolder = 'Recent'
+	if ($folder.ShowDialog() -eq "OK")
+	{
+		$MPARRSourceFolder = $folder.SelectedPath  
+	}
+	
+	# Select MPARR destination data folder
+	$folderDestination = New-Object System.Windows.Forms.FolderBrowserDialog
+	$folderDestination.UseDescriptionForTitle = $true
+	
+	$msgBody2 = "Please, take care to select the right folder where MPARR will be installed - DESTINATION -"
+	[System.Windows.MessageBox]::Show($msgBody2) |Out-Null
+	
+	$folderDestination.Description = "Select folder where MPARR solution will be installed"
+	$folderDestination.rootFolder = 'Recent'
+	if ($folderDestination.ShowDialog() -eq "OK")
+	{
+		$MPARRDestinationFolder = $folderDestination.SelectedPath 
+	}
+	
+	$MPARRConfigFile = $MPARRSourceFolder+"\laconfig.json"
+	$MPARRSchemasFile = $MPARRSourceFolder+"\schemas.json" 
+	
+	$ConfigFilesFolder = $MPARRDestinationFolder+"\ConfigFiles"
+	$LogsFolder = $MPARRDestinationFolder+"\Logs"
+
+	
+	if(-not(Test-Path -Path $MPARRConfigFile))
+	{
+		Write-Host "laconfig.json file is not located on the root folder, please check that you selected the right folder." -ForegroundColor DarkYellow
+		Write-Host "Please check that the laconfig.json file is located at the root folder."
+		Write-Host "$MPARRConfigFile"
+		Write-Host "Press any key to continue..." -NoNewLine
+		$Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown") | Out-Null
+		MPARRCopyFiles
+	}else
+	{
+		Copy-Item $MPARRConfigFile -Destination $ConfigFilesFolder
+		Write-Host "laconfig.json file copied to : "$ConfigFilesFolder -ForegroundColor Green
+	}
+	
+	if(-not(Test-Path -Path $MPARRSchemasFile))
+	{
+		Write-Host "schemas.json file was not found, nothing will be copied from this path." -ForegroundColor DarkYellow
+	}else
+	{
+		Copy-Item $MPARRSchemasFile -Destination $ConfigFilesFolder
+		Write-Host "schemas.json file copied to : "$ConfigFilesFolder -ForegroundColor Green
+	}
+	
+	$CONFIGFILE = $MPARRConfigFile 
+	$json = Get-Content -Raw -Path $CONFIGFILE
+	[PSCustomObject]$config = ConvertFrom-Json -InputObject $json
+	$LogsRootFolder = $config.OutPutLogs
+	$MPARRTimeStampFile = $LogsRootFolder+"timestamp.json"
+	
+	if(-not(Test-Path -Path $LogsRootFolder))
+	{
+		Write-Host "MPARR Logs directory is missing, nothing will be copied from this path." -ForegroundColor DarkYellow
+		Write-Host "Please check laconfig.json and the path set for OutPutLogs" -ForegroundColor Red
+	}else
+	{
+		Copy-Item $MPARRTimeStampFile -Destination $LogsFolder
+		Write-Host "timestamp.son file copied to : "$LogsFolder -ForegroundColor Green
+	}
+
+	Write-Host "`n"
+}
+
+function UpdateMPARRlaconfigFile
+{
+	Clear-Host
+	cls
+	
+	Write-Host "`n`n----------------------------------------------------------------------------------------"
+	Write-Host "`nMPARR laconfigjson file check and update!" -ForegroundColor DarkGreen
+	Write-Host "This menu helps to check laconfig.json previously created and to apply any new change required." -ForegroundColor DarkGreen
 	Write-Host "`n----------------------------------------------------------------------------------------"
 	
 	Write-Host "`nYou will prompted to select the right path where the laconfig.json file is located."
-	Write-Host "Press any key to continue..." -NoNewLine
-	$Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+	Write-Host "Press any key to continue..."
+	$key = ([System.Console]::ReadKey($true)) | Out-Null
 	
+                
+	#Here you start selecting each folder
+	[System.Reflection.Assembly]::Load("System.Windows.Forms") | Out-Null
+	$file = New-Object System.Windows.Forms.OpenFileDialog
+	# Start selecting laconfig.json location  
+	$file.Title = "Select folder where laconfig.json is located"
+	$file.InitialDirectory = 'ProgramFiles'
+	$file.Filter = 'MPARR Config file|laconfig.json'
+	# main log directory
+	if ($file.ShowDialog() -eq "OK")
+	{
+		$CONFIGFILE = $file.FileName
+		$json = Get-Content -Raw -Path $CONFIGFILE
+		[PSCustomObject]$config = ConvertFrom-Json -InputObject $json
+	}
+	
+	$Changes = "False"
+	$MicrosoftEntraConfig = $config.MicrosoftEntraConfig
+	$ExportToEventHub = $config.ExportToEventHub
+	
+	if($MicrosoftEntraConfig -eq $Null)
+	{
+		Write-Host "`n`nMPARR Entra Users is not set, this configuration is required to collect your user data."
+		Write-Host "`n`nPlease execute .\MPARR-MicrosoftEntraUsers.ps1 once to set this configuration."
+		$config = InitializeLAConfigFile -DirRoot $CONFIGFILE
+		$config.MicrosoftEntraConfig = "Not Set"
+		WriteToConfigFile -DirRoot $CONFIGFILE
+		$Changes = "True"
+		Start-Sleep -s 1
+	}
+	
+	
+	if($ExportToEventHub -eq $Null)
+	{
+		Write-Host "MPARR Event Hub connector is not set, this configuration is not mandatory, but is required if you want to use."
+		$config = InitializeLAConfigFile -DirRoot $CONFIGFILE
+		$config.ExportToEventHub = "False"
+		$config.EventHubNamespace = ""
+		$config.EventHub = ""
+		WriteToConfigFile -DirRoot $CONFIGFILE
+		$Changes = "True"
+		Start-Sleep -s 1
+	}
+
+	if($Changes -eq "True")
+	{
+		Write-Host "`nlaconfig.json file was" -NoNewLine
+		Write-Host "`t`tupdated!`n" -ForegroundColor Green
+	}else
+	{
+		Write-Host "`nlaconfig.json file is up to date, no changes applied.`n" -ForegroundColor Green
+	}
+	
+	$config | ConvertTo-Json | Out-File $CONFIGFILE
+	
+	Write-Host "Press any key to continue..."
+	$key = ([System.Console]::ReadKey($true)) | Out-Null
+}
+
+function UpdateMPARRScripts
+{
+	$MPARRUri = "https://raw.githubusercontent.com/microsoft/Microsoft-Purview-Advanced-Rich-Reports-MPARR-Collector/main"
+
+    $result = Invoke-WebRequest -Uri "$MPARRUri/UpdateInfo/update.json"
+    $update = $result.Content | ConvertFrom-Json
+	$BackupPath = $PSScriptRoot+"\BackupScripts"
+	
+	if(-Not (Test-Path $BackupPath ))
+	{
+		Write-Host "Export data directory is missing, creating a new folder called BackupScripts"
+		New-Item -ItemType Directory -Force -Path "$PSScriptRoot\BackupScripts" | Out-Null
+	}
+
+    foreach ($item in $update.files)
+    {
+        if($item.format -eq "ps1")
+		{
+			$destDir = "."
+			if ($item.directory -ne "ROOT")
+			{
+				$destDir = ".\$($item.directory)"
+				if (-not (Test-Path $item.directory))
+				{
+					Write-Host "Creating '$($item.directory)' directory." -ForegroundColor Cyan
+					New-Item -Name ($item.directory) -ItemType Directory | Out-Null
+				}
+			}
+			
+			Write-Host "`nThe file $($item.file) located at GitHub repo is set to version $($item.Version)"
+			$ScriptName = $item.file
+			if ($item.directory -ne "ROOT")
+			{
+				$SupportFolder = $item.directory
+				$MPARRFile = $PSScriptRoot+"\"+$SupportFolder+"\"+$ScriptName
+			}else
+			{
+				$MPARRFile = "$PSScriptRoot\$ScriptName"
+			}
+
+			if (-not (Test-Path -Path $MPARRFile))
+			{
+				Write-Host "`nFile $ScriptName was not found" -ForegroundColor Blue
+				Write-Host "Downloading $($item.file)..."
+				Invoke-WebRequest -Uri "$MPARRUri/$($item.URI)" -OutFile "$destDir\$($item.file)"
+			}else
+			{
+				$validatefile = Test-PSScriptFileInfo -Path $MPARRFile
+				$date = Get-Date -Format "yyyyMMdd"
+				$BackupFile = $PSScriptRoot+"\BackupScripts\"+$ScriptName+"_"+$date+".backup"
+				$SupportFolder = $item.directory
+				$SupportFile = "$SupportFolder\$ScriptName"
+				if($validatefile -eq "True")
+				{
+					$var = Test-ScriptFileInfo -Path $MPARRFile | select Version
+					if($var.Version -eq $item.Version)
+					{
+						$VersionValue = $var.Version
+						Write-Host "You already have the latest version, version $VersionValue!" -ForegroundColor Green
+					}else
+					{
+						$CloudVersionValue = $item.Version
+						$VersionValue = $var.Version
+						Write-Host "You have an old version, version $VersionValue, updating to $CloudVersionValue..." -ForegroundColor DarkYellow 
+						if ($item.directory -ne "ROOT")
+						{
+							Move-Item "$SupportFile" "$BackupFile" -Force
+						}else
+						{
+							Move-Item "$ScriptName" "$BackupFile" -Force
+						}
+						Write-Host "Downloading $($item.file)..."
+						Invoke-WebRequest -Uri "$MPARRUri/$($item.URI)" -OutFile "$destDir\$($item.file)"
+					}
+				}else
+				{
+					if ($item.directory -ne "ROOT")
+					{
+						Move-Item "$SupportFile" "$BackupFile" -Force
+					}else
+					{
+						Move-Item "$ScriptName" "$BackupFile" -Force
+					}
+					Write-Host "`nThe old script file was moved to '$BackupFile'"
+				}
+			}
+		}else
+		{
+			$ScriptName = $item.file
+			$destDir = "."
+			if ($item.directory -ne "ROOT")
+			{
+				$destDir = ".\$($item.directory)"
+				if (-not (Test-Path $item.directory))
+				{
+					Write-Host "Creating '$($item.directory)' directory." -ForegroundColor Cyan
+					New-Item -Name ($item.directory) -ItemType Directory | Out-Null
+				}
+			}
+			$SupportFolder = $item.directory
+			$MPARRFile = $PSScriptRoot+"\"+$SupportFolder+"\"+$ScriptName
+			if (-not (Test-Path -Path $MPARRFile))
+			{
+				Write-Host "`nSupporting file $ScriptName was not found" -ForegroundColor Blue
+				Write-Host "Downloading $($item.file)..."
+				Invoke-WebRequest -Uri "$MPARRUri/$($item.URI)" -OutFile "$destDir\$($item.file)"
+			}else
+			{
+				Write-Host "Supporting file $ScriptName is already available!!" -ForegroundColor Cyan
+			}
+			
+		}
+
+    }
+}
+
+function CheckMPARROnTheWeb
+{
+	$MPARRUri = "https://raw.githubusercontent.com/microsoft/Microsoft-Purview-Advanced-Rich-Reports-MPARR-Collector/main"
+
+    $result = Invoke-WebRequest -Uri "$MPARRUri/UpdateInfo/update.json"
+    $update = $result.Content | ConvertFrom-Json
+	$ItemNumber = 1
+
+    foreach ($item in $update.files)
+    {
+        if($item.format -eq "ps1")
+		{
+			$destDir = "."
+			if ($item.directory -ne "ROOT")
+			{
+				$destDir = ".\$($item.directory)"
+				if (-not (Test-Path $item.directory))
+				{
+					Write-Host "`n'$($item.directory)' directory was not found." -ForegroundColor DarkYellow
+					Write-Host "Please validate the MPARR folder structure at Menu 6 and then Menu 2"
+				}
+			}
+			
+			Write-Host "`n$ItemNumber.- The file $($item.file) located at GitHub repo is set to version $($item.Version)" -ForegroundColor DarkBlue
+			$ScriptName = $item.file
+			if ($item.directory -ne "ROOT")
+			{
+				$SupportFolder = $item.directory
+				$MPARRFile = $PSScriptRoot+"\"+$SupportFolder+"\"+$ScriptName
+			}else
+			{
+				$MPARRFile = "$PSScriptRoot\$ScriptName"
+			}
+
+			if (-not (Test-Path -Path $MPARRFile))
+			{
+				Write-Host "File $ScriptName was not found" -ForegroundColor DarkYellow
+				Write-Host "File description in the version '$($item.Version)' is :"$item.changes
+				Write-Host "Remember that you can update all the files using this same setup script(Menu 7 and then menu 2)."
+
+			}else
+			{
+				$validatefile = Test-PSScriptFileInfo -Path $MPARRFile
+				$SupportFolder = $item.directory
+				$SupportFile = "$SupportFolder\$ScriptName"
+				if($validatefile -eq "True")
+				{
+					$var = Test-ScriptFileInfo -Path $MPARRFile | select Version
+					if($var.Version -eq $item.Version)
+					{
+						$VersionValue = $var.Version
+						Write-Host "You already have the latest version, version $VersionValue!" -ForegroundColor Green
+					}else
+					{
+						$CloudVersionValue = $item.Version
+						$VersionValue = $var.Version
+						Write-Host "You have an old version, version $VersionValue." -ForegroundColor DarkYellow 
+						Write-Host "File description in the new version '$($item.Version)' is :"$item.changes
+						Write-Host "Remember that you can update all the files using this same setup script(Menu 7 and then menu 2)."
+					}
+				}else
+				{
+					Write-Host "You have an old version, without versioning." -ForegroundColor DarkYellow 
+					Write-Host "File description in the new version '$($item.Version)' is :"$item.changes
+					Write-Host "Remember that you can update all the files using this same setup script(Menu 7 and then menu 2)."
+				}
+			}
+		}else
+		{
+			Write-Host "`n$ItemNumber.- The file $($item.file) located at GitHub repo is set to version $($item.Version)" -ForegroundColor DarkBlue
+			$ScriptName = $item.file
+			$destDir = "."
+			if ($item.directory -ne "ROOT")
+			{
+				$destDir = ".\$($item.directory)"
+				if (-not (Test-Path $item.directory))
+				{
+					Write-Host "`n'$($item.directory)' directory was not found." -ForegroundColor DarkYellow
+					Write-Host "Please validate the MPARR folder structure at Menu 6 and then Menu 2"
+				}
+			}
+			$SupportFolder = $item.directory
+			$MPARRFile = $PSScriptRoot+"\"+$SupportFolder+"\"+$ScriptName
+			if (-not (Test-Path -Path $MPARRFile))
+			{
+				Write-Host "Supporting file $ScriptName was not found" -ForegroundColor DarkYellow
+				Write-Host "File description in the version '$($item.Version)' is :"$item.changes
+				Write-Host "Remember that you can update all the files using this same setup script(Menu 7 and then menu 2)."
+			}else
+			{
+				Write-Host "Supporting file $ScriptName is already available!!" -ForegroundColor Cyan
+			}
+			
+		}
+		$ItemNumber++
+    }
+	Write-Host "`nPress any key to continue..." -ForegroundColor DarkYellow
+	$key = ([System.Console]::ReadKey($true)) | Out-Null
 }
 
 function SubMenuMPARRCoreScripts
@@ -1438,6 +2255,37 @@ function SubMenuMicrosoftPurviewAPIScripts
 	}
 }
 
+function SubMenuTaskSchedulerScripts
+{
+	$choice = 1
+	while ($choice -ne "0")
+	{
+		Clear-Host
+		cls
+		Write-Host "`n`n----------------------------------------------------------------------------------------"
+		Write-Host "`nMPARR Task scheduler menu!" -ForegroundColor DarkBlue
+		Write-Host "Here you can set the tasks under Task Scheduler to run automatically MPARR." -ForegroundColor Blue
+		Write-Host "`n----------------------------------------------------------------------------------------"
+		Write-Host "`n### Microsoft Graph API scripts ###" -ForegroundColor Blue
+		Write-Host "`nWhat do you want to do?"
+		Write-Host "`t[1] - Create scheduled task for Core Scripts (MPARR Collector and MPARR RMS)"
+		Write-Host "`t[2] - Microsoft Graph API Scripts(Users, Domains, Roles, Cloud Statistics)"
+		Write-Host "`t[3] - Microsoft Purview API(Sensitivity Labels, Sensitive Info Types, Purview Roles, Content Explorer )"
+		Write-Host "`t[0] - Back to main menu"
+		Write-Host "`n"
+		Write-Host "`nPlease choose option:"
+		
+		$choice = ([System.Console]::ReadKey($true)).KeyChar
+		switch ($choice) {
+			"1" {SubMenuMPARRCoreScripts; break}
+			"2" {SubMenuMicrosoftGraphAPIScripts; break}
+			"3" {SubMenuMicrosoftPurviewAPIScripts; break}
+			"0" {cls;return}
+		}
+	
+	}
+}
+
 function SubMenuMicrosoftLicensingScripts
 {
 	$choice = 1
@@ -1479,14 +2327,16 @@ function SubMenuMigrateMPARR
 		cls
 		Write-Host "`n`n----------------------------------------------------------------------------------------"
 		Write-Host "`nMPARR migration menu!" -ForegroundColor DarkBlue
-		Write-Host "Here you can execute the script related to Microsoft Licensing friendly names." -ForegroundColor Blue
-		Write-Host "Or set a task for that activity." -ForegroundColor Blue
+		Write-Host "Here you can execute the script related to Migrate MPARR from a previous installation." -ForegroundColor Blue
 		Write-Host "`n----------------------------------------------------------------------------------------"
 		Write-Host "`n### Microsoft Graph API scripts ###" -ForegroundColor Blue
 		Write-Host "`nWhat do you want to do?"
 		Write-Host "`t[1] - Check Microsoft Entra App permissions"
-		Write-Host "`t[2] - Migrate from a previous MPARR installation"
-		Write-Host "`t[3] - Update MPARR from Web"
+		Write-Host "`t[2] - Set MPARR Path and Folder Structure"
+		Write-Host "`t[3] - Migrate from a previous MPARR installation"
+		Write-Host "`t[4] - Migrate only configuration files"
+		Write-Host "`t[5] - Check laconfig.json consistency and fix"
+		Write-Host "`t[6] - Configure Event Hub connector"
 		Write-Host "`t[0] - Back to main menu"
 		Write-Host "`n"
 		Write-Host "`nPlease choose option:"
@@ -1494,8 +2344,41 @@ function SubMenuMigrateMPARR
 		$choice = ([System.Console]::ReadKey($true)).KeyChar
 		switch ($choice) {
         "1" {UpdateMPARREntraApp; break}
-		"2" {MicrosoftLicensing -LicenseOption 2; break}
-		"3" {MicrosoftLicensing -LicenseOption 3; break}
+		"2" {MPARRFolderStructure; break}
+		"3" {MPARRCopyFiles; break}
+		"4" {MPARRCopyConfigFilesOnly; break}
+		"5" {UpdateMPARRlaconfigFile; break}
+		"6" {UpdateMPARREventHub; break}
+		"0" {cls; return}
+		}
+	
+	}
+}
+
+function SubMenuMPARROnTheWeb
+{
+	$choice = 1
+	while ($choice -ne "0")
+	{
+		Clear-Host
+		cls
+		Write-Host "`n`n----------------------------------------------------------------------------------------"
+		Write-Host "`nMPARR migration menu!" -ForegroundColor DarkBlue
+		Write-Host "Here you can execute the script related to Microsoft Licensing friendly names." -ForegroundColor Blue
+		Write-Host "Or set a task for that activity." -ForegroundColor Blue
+		Write-Host "`n----------------------------------------------------------------------------------------"
+		Write-Host "`n### Microsoft Graph API scripts ###" -ForegroundColor Blue
+		Write-Host "`nWhat do you want to do?"
+		Write-Host "`t[1] - Check about MPARR new scripts"
+		Write-Host "`t[2] - Update MPARR from Web"
+		Write-Host "`t[0] - Back to main menu"
+		Write-Host "`n"
+		Write-Host "`nPlease choose option:"
+		
+		$choice = ([System.Console]::ReadKey($true)).KeyChar
+		switch ($choice) {
+        "1" {CheckMPARROnTheWeb; break}
+		"2" {UpdateMPARRScripts; break}
 		"0" {cls;return}
 		}
 	
@@ -1527,12 +2410,11 @@ function MainMenu
 		Write-Host "`nWhat do you want to do?"
 		Write-Host "`t[1] - Setup MPARR 2(New installation)"
 		Write-Host "`t[2] - Encrypt secrets"
-		Write-Host "`t[3] - Create scheduled task for Core Scripts (MPARR Collector and MPARR RMS)"
-		Write-Host "`t[4] - Microsoft Graph API Scripts(Users, Domains, Roles, Cloud Statistics)"
-		Write-Host "`t[5] - Microsoft Purview API(Sensitivity Labels, Sensitive Info Types, Purview Roles, Content Explorer )"
-		Write-Host "`t[6] - Microsoft Licensing"
-		Write-Host "`t[7] - Migrate from previous MPARR setup to MPARR 2"
-		Write-Host "`t[8] - Sign MPARR scripts"
+		Write-Host "`t[3] - Set MPARR scripts on Task Scheduler"
+		Write-Host "`t[4] - Microsoft Licensing"
+		Write-Host "`t[5] - Migrate from previous MPARR setup to MPARR 2"
+		Write-Host "`t[6] - MPARR on the Web(check new versions, update MPARR)"
+		Write-Host "`t[7] - Sign MPARR scripts"
 		Write-Host "`t[0] - Exit"
 		Write-Host "`n"
 		Write-Host "`nPlease choose option:"
@@ -1546,20 +2428,18 @@ function MainMenu
 					GetTenantInfo
 					SelectCloud
 					SelectLogPath
-					WriteToJsonFile
+					UpdateMPARREventHub
 					break
 				}
 			"2" {EncryptSecrets; break}
-			"3" {SubMenuMPARRCoreScripts; break}
-			"4" {SubMenuMicrosoftGraphAPIScripts; break}
-			"5" {SubMenuMicrosoftPurviewAPIScripts; break}
-			"6" {SubMenuMicrosoftLicensingScripts; break}
-			"7" {SubMenuMigrateMPARR; break}
-			"8" {SelfSignScripts; break}
-
+			"3" {SubMenuTaskSchedulerScripts; break}
+			"4" {SubMenuMicrosoftLicensingScripts; break}
+			"5" {SubMenuMigrateMPARR; break}
+			"6" {SubMenuMPARROnTheWeb; break}
+			"7" {SelfSignScripts; break}
+			"0" {cls; exit}
 			
 		}
 	}
 }
 MainMenu
-

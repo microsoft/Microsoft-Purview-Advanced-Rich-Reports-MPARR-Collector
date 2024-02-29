@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 2.0.4
+.VERSION 2.0.5
 
 .GUID 883af802-165c-4708-b4c1-352686c02f01
 
@@ -48,23 +48,24 @@ This script permit to collect Microsoft Entra Users attributes existing on the t
 
 <#
 HISTORY
-Script      : MPARR-MicrosoftEntraUsers.ps1
-Author      : S. Zamorano
-Version     : 2.0.4
-Description : The script exports Microsoft Entra users from Microsoft Graph and pushes into a customer-specified Log Analytics table. Please note if you change the name of the table - you need to update Workbook sample that displays the report , appropriately. Do ensure the older table is deleted before creating the new table - it will create duplicates and Log analytics workspace doesn't support upserts or updates.
-2022-10-12		S. Zamorano		- Added laconfig.json file for configuration and decryption Function
-2022-10-18		G. Berdzik		- Fix licensing information
-2023-01-03		S. Zamorano		- Added Change to use beta API capabilities, added Id for users
-2023-03-31      G. Berdzik      - Support for large tenants
-2023-03-31		S. Zamorano		- Visual improvement for progress
-2023-10-02		S. Zamorano		- Fix Progress bar
-2023-10-24		S. Zamorano		- Added Microsoft Entra filter option
-2023-11-07		S. Zamorano		- Added attribute to skip decision and use as a task
-2023-11-27		S. Zamorano		- Added Microsoft_EntraIDUsers.json file to select the Attributes required per user, added function PowerShell version check
+	Script      : MPARR-MicrosoftEntraUsers.ps1
+	Author      : S. Zamorano
+	Version     : 2.0.5
+	Description : The script exports Microsoft Entra users from Microsoft Graph and pushes into a customer-specified Log Analytics table. Please note if you change the name of the table - you need to update Workbook sample that displays the report , appropriately. Do ensure the older table is deleted before creating the new table - it will create duplicates and Log analytics workspace doesn't support upserts or updates.
+	2022-10-12		S. Zamorano		- Added laconfig.json file for configuration and decryption Function
+	2022-10-18		G. Berdzik		- Fix licensing information
+	2023-01-03		S. Zamorano		- Added Change to use beta API capabilities, added Id for users
+	2023-03-31      G. Berdzik      - Support for large tenants
+	2023-03-31		S. Zamorano		- Visual improvement for progress
+	2023-10-02		S. Zamorano		- Fix Progress bar
+	2023-10-24		S. Zamorano		- Added Microsoft Entra filter option
+	2023-11-07		S. Zamorano		- Added attribute to skip decision and use as a task
+	2023-11-27		S. Zamorano		- Added Microsoft_EntraIDUsers.json file to select the Attributes required per user, added function PowerShell version check
 
-07-02-2024		S. Zamorano		- First release
-07-02-2024		S. Zamorano		- Added EventHub connector
-12-02-2024		S. Zamorano		- New version released
+	07-02-2024		S. Zamorano		- First release
+	07-02-2024		S. Zamorano		- Added EventHub connector
+	12-02-2024		S. Zamorano		- New version released
+	01-03-2024		S. Zamorano		- Public release
 #>
 
 using module "ConfigFiles\MPARRUtils.psm1"
@@ -566,7 +567,7 @@ function WriteToJsonFile
 	if (Test-Path "$PSScriptRoot\ConfigFiles\laconfig.json")
     {
         $date = Get-Date -Format "yyyyMMddHHmmss"
-        Move-Item "$PSScriptRoot\ConfigFiles\laconfig.json" "$PSScriptRoot\laconfig_$date.json"
+        Move-Item "$PSScriptRoot\ConfigFiles\laconfig.json" "$PSScriptRoot\BackupScripts\laconfig_$date.json"
         Write-Host "`nThe old config file moved to 'laconfig_$date.json'"
     }
     $config | ConvertTo-Json | Out-File "$PSScriptRoot\ConfigFiles\laconfig.json"
@@ -630,6 +631,7 @@ function SelectImportFilter
 		#This Function is used to select the kind of filter for the users from MIcrosoft Entra ID
 		Write-Host "`n##########################################################################################" -ForegroundColor Blue
 		Write-Host "`nBy default this script import the data only from licensed users and as a members of Tenant, any other kind of users like as guest or unlicensed are not imported." -ForegroundColor Yellow
+		Write-Hosr "If you want to collect all the information for all users in your tenant including guest and unlicensed users select Change." -ForegroundColor Yellow
 		$choices  = '&Proceed', '&Change'
 		Write-Host "If you are ok with this you can select Proceed, if you want to download all users including guest and unlicensed users please select Change." -ForegroundColor Yellow
 		$decision = $Host.UI.PromptForChoice("", "Default filter only members with licenses assigned. Do you want to Proceed or Change?", $choices, 0)
