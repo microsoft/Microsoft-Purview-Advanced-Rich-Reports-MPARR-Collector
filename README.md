@@ -10,7 +10,7 @@ Having the right information at the right time has great business value, especia
 Today one of the principal challenges in all organizations is stay align with the Compliance principles, each organization define their own priorities, and policies definitions. But, in all the cases they need to involve the complete organization, and to involve we need to show the right information at the right time.
 Office 365 Management API collect all the information available through Unified Auditing tool, this helps to Security, Compliance and IT areas looking for some specific information and generate some reports but is not possible easily to show that information to different business units, and they don’t have the time neither to prepare more detailed reports.
 
-![MPARR - Solution dependencies](https://github.com/microsoft/Microsoft-Purview-Advanced-Rich-Reports-MPARR-Collector/assets/44684110/d2a303e1-2333-415a-ba0c-aae1b06972fb)
+![image](https://github.com/microsoft/Microsoft-Purview-Advanced-Rich-Reports-MPARR-Collector/assets/44684110/5406bdd3-8038-4e24-8b59-799f4abd6f16)
 <p align="center">Variables needed to set in laconfig.json files and the TableNames created on Logs Analytics</p>
  
 In that order of ideas, the solution presented next permit to have a robust solution to collect all the data and prepare reports with specific scopes to specific audiences, without require special permissions or additional knowledge to understand the security tools.
