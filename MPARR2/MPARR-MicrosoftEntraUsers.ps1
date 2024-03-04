@@ -631,7 +631,7 @@ function SelectImportFilter
 		#This Function is used to select the kind of filter for the users from MIcrosoft Entra ID
 		Write-Host "`n##########################################################################################" -ForegroundColor Blue
 		Write-Host "`nBy default this script import the data only from licensed users and as a members of Tenant, any other kind of users like as guest or unlicensed are not imported." -ForegroundColor Yellow
-		Write-Hosr "If you want to collect all the information for all users in your tenant including guest and unlicensed users select Change." -ForegroundColor Yellow
+		Write-Host "If you want to collect all the information for all users in your tenant including guest and unlicensed users select Change." -ForegroundColor Yellow
 		$choices  = '&Proceed', '&Change'
 		Write-Host "If you are ok with this you can select Proceed, if you want to download all users including guest and unlicensed users please select Change." -ForegroundColor Yellow
 		$decision = $Host.UI.PromptForChoice("", "Default filter only members with licenses assigned. Do you want to Proceed or Change?", $choices, 0)
