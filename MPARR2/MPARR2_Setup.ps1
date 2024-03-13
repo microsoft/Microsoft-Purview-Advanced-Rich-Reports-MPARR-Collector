@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 2.0.5
+.VERSION 2.0.6
 
 .GUID 883af802-165c-4702-b4c1-352686c02f01
 
@@ -66,8 +66,8 @@ MPARR installer.
     [0] - Exit 
     
 .NOTES
-    Version 2.0.5
-    Current version - 01.03.2024
+    Version 2.0.6
+    Current version - 14.03.2024
 #> 
 
 <#
@@ -88,6 +88,7 @@ HISTORY
   2023-10-20	S.Zamorano	- Folder selection added for Task Scheduler, permit to create or use existing.
   
   2024-03-01	S.Zamorano	- Public release supporting all the new scripts for MPARR 2 
+  2024-03-14	S.Zamorano	- Minor fixes related to sign scripts with extension psd1 and psm1 located on the ConfigFiles folder
 #>
 
 #------------------------------------------------------------------------------  
@@ -1301,7 +1302,7 @@ function SelfSignScripts
 			
 			#Sign MPARR Scripts
 			$files = Get-ChildItem -Path .\MPARR*.ps1
-			$SupportFiles = Get-ChildItem -Path .\ConfigFiles\MPARR*.ps1
+			$SupportFiles = Get-ChildItem -Path .\ConfigFiles\MPARR*.ps*
 			
 			foreach($file in $files)
 			{
@@ -1388,7 +1389,7 @@ function EncryptSecrets
     $config.CertificateThumb = $CertificateThumb
 
     $date = Get-Date -Format "yyyyMMddHHmmss"
-    Move-Item "laconfig.json" "laconfig_$date.json"
+    Move-Item "laconfig.json" "$PSScriptRoot\ConfigFiles\laconfig_$date.json"
     Write-Host "`nSecrets encrypted."
     Write-Host "The old config file moved to 'laconfig_$date.json'" -ForegroundColor Green
     $config | ConvertTo-Json | Out-File $CONFIGFILE

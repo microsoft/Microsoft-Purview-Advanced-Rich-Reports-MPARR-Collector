@@ -99,9 +99,9 @@
         {
             "directory": "ROOT",
             "file": "MPARR2_Setup.ps1",
-			"version": "2.0.5",
+			"version": "2.0.6",
 			"format": "ps1",
-			"changes": "New MPARR 2 initial release",
+			"changes": "Minor change related to sign scripts added extensions .psd1 and .psm1, fixed path to backup laconfig.json file.",
             "URI": "MPARR2/MPARR2_Setup.ps1"
         },
         {
