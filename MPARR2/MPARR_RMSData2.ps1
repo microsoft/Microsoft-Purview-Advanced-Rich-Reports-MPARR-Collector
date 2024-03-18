@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 2.0.5
+.VERSION 2.0.6
 
 .GUID 883af802-165c-4701-b4c1-352686c02f01
 
@@ -64,13 +64,14 @@ The script exports Aipservice Log Data from Microsoft AADRM API and pushes into 
 HISTORY
 Script      : MPARR-RMSData2.ps1
 Author      : S. Zamorano
-Version     : 2.0.5
+Version     : 2.0.6
 
 .NOTES (Version 2)
 	02-02-2024	S. Zamorano		- Script was re written and EventHub connector added
 	02-02-2024	S. Zamorano		- First release
 	14-02-2024	Berdzik\Zamorano- Added function to call support scripts using PowerShell 5
 	01-03-2024	S. Zamorano		- Public release
+	18-03-2024	S. Zamorano		- Logic to process the array associated to ContenID field is changed to process by day.
 #> 
 
 using module "ConfigFiles\MPARRUtils.psm1"
@@ -604,6 +605,8 @@ function TrackingRMSDetails($ContentIds)
 	$ExportPath = $PSScriptRoot+"\ExportedData"
 	$datefile = Get-Date 
 	$datefile = $datefile.AddDays(-1).ToString("yyyy-MM-dd")
+	$ZIPDate = Get-date
+	$ZIPDate = $ZIPDate.ToString('dd-MM-yyyy_hh-mm-ss')
 	
 	if(-Not (Test-Path $ExportTracking ))
 	{
@@ -676,7 +679,7 @@ function TrackingRMSDetails($ContentIds)
 	$compress = @{
 		Path = $ExportTracking+"\*.processed"
 		CompressionLevel = "Fastest"
-		DestinationPath = $ExportTracking+"\MPARR - RMS Tracking Logs - "+$datefile+".zip"
+		DestinationPath = $ExportTracking+"\MPARR - RMS Tracking Logs - "+$ZIPDate+".zip"
 	}
 	Compress-Archive @compress -Force
 	$RemoveFiles = $ExportTracking+"\*.processed"
@@ -864,6 +867,18 @@ function Export-RMSDatav2
 		$loopNumber++
 		Write-Host "File '$file' was processed with $($csv.count - 1) records."
 		Move-Item $file "$($file).processed" -Force
+		
+		#Start processing Content ID array per file
+		$RMSArrayID = @()
+		foreach($id in $RMSContentID)
+		{
+			$RMSArrayID += $id.TrackingID
+		}
+		$RMSArrayID = $RMSArrayID | select -Unique
+
+		TrackingRMSDetails -ContentIds $RMSArrayID
+		$ContentIds = @()
+		
 	}
 	$compress = @{
 		Path = $RMSLogs+"*.processed"
@@ -874,6 +889,7 @@ function Export-RMSDatav2
 	$RemoveFiles = $RMSLogs+"*.processed"
 	Remove-Item -Path $RemoveFiles -Force
 	
+	<#
 	$RMSArrayID = @()
 	foreach($id in $RMSContentID)
 	{
@@ -882,6 +898,7 @@ function Export-RMSDatav2
 	$RMSArrayID = $RMSArrayID | select -Unique
 
 	TrackingRMSDetails -ContentIds $RMSArrayID
+	#>
 }
 
 #Run the script.
@@ -892,3 +909,4 @@ if($CreateTask)
 	exit
 }
 Export-RMSDatav2
+
