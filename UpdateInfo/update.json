@@ -91,9 +91,9 @@
         {
             "directory": "ROOT",
             "file": "MPARR_RMSData2.ps1",
-			"version": "2.0.5",
+			"version": "2.0.6",
 			"format": "ps1",
-			"changes": "New MPARR 2 initial release",
+			"changes": "RMS Tracking log function changed to work for each file processed, instead to wait to process all the files first, to optimize memory",
             "URI": "MPARR2/MPARR_RMSData2.ps1"
         },
         {
