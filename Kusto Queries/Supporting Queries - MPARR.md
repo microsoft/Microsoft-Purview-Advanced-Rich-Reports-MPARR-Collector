@@ -22,6 +22,18 @@ All these scripts are connected to Microsoft Graph API through the permissions a
 ```Kusto
 AzureADUsers_CL 
 | where TimeGenerated >= now(-30d)
+| project 
+    TimeGenerated = column_ifexists('TimeGenerated',''),
+    UserPrincipalName_s = column_ifexists('UserPrincipalName_s',''),
+    DisplayName_s = column_ifexists('DisplayName_s',''),
+    AssignedLicenses_s = column_ifexists('AssignedLicenses_s',''),
+    City_s = column_ifexists('City_s',''),
+    JobTitle_s = column_ifexists('JobTitle_s',''),
+    Department_s = column_ifexists('Department_s',''),
+    Mail_s = column_ifexists('Mail_s',''),
+    OfficeLocation_s = column_ifexists('OfficeLocation_s',''),
+    UserID_g = column_ifexists('UserID_g',''),
+    LastAccess_t = column_ifexists('LastAccess_t','')
 | summarize arg_max(TimeGenerated, UserPrincipalName_s, DisplayName_s, AssignedLicenses_s, City_s, JobTitle_s, Department_s, Mail_s, OfficeLocation_s, UserID_g, LastAccess_t) by UserPrincipalName_s
 ```
 
