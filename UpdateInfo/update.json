@@ -83,9 +83,9 @@
         {
             "directory": "ROOT",
             "file": "MPARR_Collector2.ps1",
-			"version": "2.0.5",
+			"version": "2.0.6",
 			"format": "ps1",
-			"changes": "New MPARR 2 initial release",
+			"changes": "Fix added to endtime variable based in an odd UTC issue",
             "URI": "MPARR2/MPARR_Collector2.ps1"
         },
         {

@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 2.0.5
+.VERSION 2.0.6
 
 .GUID 883af802-165c-4700-b4c1-352686c02f01
 
@@ -133,7 +133,7 @@ Exports Microsoft 365 Audit logs data to Log Analytics or Event Hub. Optionaly d
 HISTORY
 Script      : MPARR-Collector2.ps1
 Authors     : G.Berdzik / S. Zamorano
-Version     : 2.0.5
+Version     : 2.0.6
 Purpose		: Collects Logs from Office 365 Management API and send to Logs Analytcs, Event Hub or File
 
 HISTORY
@@ -155,6 +155,7 @@ HISTORY
 	07-02-2024	S. Zamorano		- Added EventHub connector
 	12-02-2024	S. Zamorano		- New version released
 	01-03-2024	S. Zamorano		- Public release
+	03-04-2024	Marco van Doorn	- Fix related to an odd behavior with UTC time (https://www.linkedin.com/in/marco-van-doorn-a79a3a2/)
 #>
 
 #
@@ -564,7 +565,7 @@ end
 			else
 			{
 				$strt = $startTime
-				$end  = $endTime
+				$end = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ss") 
 			}
 
 			Write-Verbose " Start = $strt"
@@ -1101,7 +1102,8 @@ end
 				Write-Host "Records with CreationTime older than two days will be ingested with current time for the TimeGenerated column!" -ForegroundColor Red
 			}
 		}
-		$endTime = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss")
+		#$endTime = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss")
+		$endTime = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ss") 
 		# check if difference between start and end times bigger than 24 hours 
 		if ((New-TimeSpan -Start $startTime -End $endTime).TotalHours -gt 24)
 		{
@@ -1128,5 +1130,4 @@ end
 	MainCollector
 #endregion
 }
-
 
