@@ -106,11 +106,11 @@
         },
         {
             "directory": "ROOT",
-			"file": "MPARR-ContentExplorerData.ps1",
-			"version": "2.0.5",
+			"file": "MPARR-ContentExplorerData2.ps1",
+			"version": "2.1.1",
 			"format": "ps1",
-			"changes": "New MPARR 2 initial release",
-            "URI": "MPARR2/MPARR-ContentExplorerData.ps1"
+			"changes": "New version released, changes on logic used to collect data ",
+            "URI": "MPARR2/MPARR-ContentExplorerData2.ps1"
         },
         {
             "directory": "ROOT",

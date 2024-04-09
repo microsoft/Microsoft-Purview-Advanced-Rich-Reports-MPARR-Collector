@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 2.0.5
+.VERSION 2.1.1
 
 .GUID 883af802-165c-4703-b4c1-352686c02f01
 
@@ -48,11 +48,11 @@ The script exports Content Explorer from Export-ContentExplorerData and pushes i
 
 <#
 HISTORY
-Script      : MPARR-ContentExplorerData-BasicReturn.ps1
+Script      : MPARR-ContentExplorerData.ps1
 Author      : Sebastian Zamorano
 Co-Author   : 
-Version     : 2.0.5
-Date		: 05-02-2024
+Version     : 2.1.1
+Date		: 09-04-2024
 Description : The script exports Content Explorer from Export-ContentExplorerData and pushes into a customer-specified Log Analytics table. 
 			Please note if you change the name of the table - you need to update Workbook sample that displays the report , appropriately. 
 			Do ensure the older table is deleted before creating the new table - it will create duplicates and Log analytics workspace doesn't support upserts or updates.
@@ -67,24 +67,32 @@ Description : The script exports Content Explorer from Export-ContentExplorerDat
 	05-01-2024	S. Zamorano		- Improve how to manage page size, and how the data is exported to CSV or Logs Analytics
 	05-02-2024	S. Zamorano		- Buffer added to send to Logs Analytics and Trap cmdlet to fix some breaks
 	01-03-2024	S. Zamorano		- Public release
+	08-04-2024	S. Zamorano		- Change on the logic used to get the data from Content Explorer Data and reduce errors from that PowerShell Module. Added a list of users and sites
+	09-04-2024	S. Zamorano		- Fixes for MassExport and simple export. Added Event Hub option
 #>
 
+using module "ConfigFiles\MPARRUtils.psm1"
 [CmdletBinding(DefaultParameterSetName = "None")]
 param(
 	[string]$TableName = "ContentExplorer",
 	#Export-ContentExplorerData cmdlet requires a PageSize that can be between 1 to 5000, by default is set to 100, you can change the number below or use the parameter -ChangePageSize to modify during the execution
-	[int]$InitialPageSize = 100,
-	[int]$Buffer2LogsAnalytics = 100,
+	[int]$InitialPageSize = 200,
 	[Parameter()] 
-        [switch]$ExportToFileOnly,
+        [switch]$SimpleExportToFile,
     [Parameter()] 
         [switch]$ChangePageSize,
 	[Parameter()] 
         [switch]$MassExportToCsv,
 	[Parameter()] 
-        [switch]$CreateJsonFiles,
+        [switch]$MassExportToJson,
+	[Parameter()] 
+        [switch]$CreateConfigFiles,
 	[Parameter()] 
         [switch]$ManualConnection,
+	[Parameter()] 
+        [switch]$CheckDependencies,
+	[Parameter()] 
+        [switch]$ExportToEventHub,
 	[Parameter()] 
         [switch]$CreateTask
 )
@@ -102,6 +110,76 @@ function CheckPowerShellVersion
         Write-Host "Failed" -ForegroundColor Red
         Write-Host "`tCurrent version is $($Host.Version). PowerShell version 7 or newer is required."
         exit(1)
+    }
+}
+
+function CheckIfElevated
+{
+    $IsElevated = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    if (!$IsElevated)
+    {
+        Write-Host "`nPlease start PowerShell as Administrator.`n" -ForegroundColor Yellow
+        exit(1)
+    }
+}
+
+function CheckRequiredModules 
+{
+    # Check PowerShell modules
+    Write-Host "Checking PowerShell modules..."
+    $requiredModules = @(
+		@{Name="Microsoft.Graph.Sites"; MinVersion="0.0"},
+		@{Name="Microsoft.Graph.Reports"; MinVersion="0.0"},
+        @{Name="ExchangeOnlineManagement"; MinVersion="0.0"}
+        )
+
+    $modulesToInstall = @()
+    foreach ($module in $requiredModules)
+    {
+        Write-Host "`t$($module.Name) - " -NoNewline
+        $installedVersions = Get-Module -ListAvailable $module.Name
+        if ($installedVersions)
+        {
+            if ($installedVersions[0].Version -lt [version]$module.MinVersion)
+            {
+                Write-Host "`t`t`tNew version required" -ForegroundColor Red
+                $modulesToInstall += $module.Name
+            }
+            else 
+            {
+                Write-Host "`t`t`tInstalled" -ForegroundColor Green
+            }
+        }
+        else
+        {
+            Write-Host "`t`t`tNot installed" -ForegroundColor Red
+            $modulesToInstall += $module.Name
+        }
+    }
+
+    if ($modulesToInstall.Count -gt 0)
+    {
+        CheckIfElevated
+		$choices  = '&Yes', '&No'
+
+        $decision = $Host.UI.PromptForChoice("", "Misisng required modules. Proceed with installation?", $choices, 0)
+        if ($decision -eq 0) 
+        {
+            Write-Host "Installing modules..."
+            foreach ($module in $modulesToInstall)
+            {
+                Write-Host "`t$module"
+				Install-Module $module -ErrorAction Stop
+                
+            }
+            Write-Host "`nModules installed. Please start the script again."
+            exit(0)
+        } 
+        else 
+        {
+            Write-Host "`nExiting setup. Please install required modules and re-run the setup."
+            exit(1)
+        }
     }
 }
 
@@ -151,6 +229,22 @@ function ValidateConfigurationFile
 	{
 		Write-Host "Checking MPARR-TrainableClassifiersList.json file..." -NoNewLine
 		Write-Host "`tPassed!" -ForeGroundColor Green
+		$jsonTC = Get-Content -Raw -Path $TCSelected
+		[PSCustomObject]$tcs = ConvertFrom-Json -InputObject $jsonTC
+		$CountTCs = 0
+		$CountTCselected = 0
+		
+		foreach ($tcd in $tcs.psobject.Properties)
+		{
+			if ($tcs."$($tcd.Name)" -eq "True")
+			{
+				$CountTCselected++
+			}
+			$CountTCs++
+		}
+		
+		Write-Host "`t`tTrainable Classifiers selected : `t$CountTCselected of $CountTCs"
+		Start-Sleep -s 1
 		Start-Sleep -s 1
 	}
 	
@@ -187,9 +281,208 @@ function ValidateConfigurationFile
 	}
 }
 
+function ValidateAdditionalConfigurationFiles
+{
+	#The next files can be created through execute .\MPARR-ContentExplorerData2.ps1 -CreateConfigFiles
+	
+	#To export data from Sensitive Information Types
+	$SITsSelected = "$PSScriptRoot\ConfigFiles\MPARR-SensitiveInfoTypesList.json"
+	if (-not (Test-Path -Path $SITsSelected))
+	{
+		Write-Host "MPARR-SensitiveInfoTypesList.json file is not set, all Sensitive Information Types will be used" -ForeGroundColor DarkYellow
+		Write-Host "If you want to use this configuration file, can  be created executing .\MPARR-ContentExplorerData2.ps1 -CreateConfigFiles"
+		Write-Host "File will be created at "$PSScriptRoot"\ConfigFiles"
+	}else
+	{
+		Write-Host "Checking MPARR-SensitiveInfoTypesList.json file..." -NoNewLine
+		Write-Host "`tAvailable!" -ForeGroundColor Green
+		$jsonSIT = Get-Content -Raw -Path $SITsSelected
+		[PSCustomObject]$sitss = ConvertFrom-Json -InputObject $jsonSIT
+		$CountSITs = 0
+		$CountSITselected = 0
+		
+		foreach ($sitd in $sitss.psobject.Properties)
+		{
+			if ($sitss."$($sitd.Name)" -eq "True")
+			{
+				$CountSITselected++
+			}
+			$CountSITs++
+		}
+		
+		Write-Host "`t`tSensitive Information Types selected : `t$CountSITselected of $CountSITs"
+		Start-Sleep -s 2
+	}
+	
+	#To export data from Sensitivity Labels
+	$SLSelected = "$PSScriptRoot\ConfigFiles\MPARR-SensitivityLabelsList.json"
+	if (-not (Test-Path -Path $SLSelected))
+	{
+		Write-Host "MPARR-SensitivityLabelsList.json file is not set, all Sensitivity Labels will be used" -ForeGroundColor DarkYellow
+		Write-Host "If you want to use this configuration file, can  be created executing .\MPARR-ContentExplorerData2.ps1 -CreateConfigFiles"
+		Write-Host "File will be created at "$PSScriptRoot"\ConfigFiles"
+	}else
+	{
+		Write-Host "Checking MPARR-SensitivityLabelsList.json file..." -NoNewLine
+		Write-Host "`tAvailable!" -ForeGroundColor Green
+		$jsonSL = Get-Content -Raw -Path $SLSelected
+		[PSCustomObject]$sls = ConvertFrom-Json -InputObject $jsonSL
+		$CountSLs = 0
+		$CountSLselected = 0
+		
+		foreach ($sld in $sls.psobject.Properties)
+		{
+			if ($sls."$($sld.Name)" -eq "True")
+			{
+				$CountSLselected++
+			}
+			$CountSLs++
+		}
+		
+		Write-Host "`t`tSensitivity Labels selected : `t`t$CountSLselected of $CountSLs"
+		Start-Sleep -s 1
+	}
+	
+	#To export data from Retention Labels
+	$RLSelected = "$PSScriptRoot\ConfigFiles\MPARR-RetentionLabelsList.json"
+	if (-not (Test-Path -Path $RLSelected))
+	{
+		Write-Host "MPARR-RetentionLabelsList.json file is not set, all Retention Labels will be used" -ForeGroundColor DarkYellow
+		Write-Host "If you want to use this configuration file, can  be created executing .\MPARR-ContentExplorerData2.ps1 -CreateConfigFiles"
+		Write-Host "File will be created at "$PSScriptRoot"\ConfigFiles"
+	}else
+	{
+		Write-Host "Checking MPARR-RetentionLabelsList.json file..." -NoNewLine
+		Write-Host "`t`tAvailable!" -ForeGroundColor Green
+		$jsonRL = Get-Content -Raw -Path $RLSelected
+		[PSCustomObject]$rls = ConvertFrom-Json -InputObject $jsonRL
+		$CountRLs = 0
+		$CountRLselected = 0
+		
+		foreach ($rld in $rls.psobject.Properties)
+		{
+			if ($rls."$($rld.Name)" -eq "True")
+			{
+				$CountRLselected++
+			}
+			$CountRLs++
+		}
+		
+		Write-Host "`t`tRetention Labels selected : `t`t$CountRLselected of $CountRLs"
+		Start-Sleep -s 1
+	}
+}
+
 function CheckPrerequisites
 {
     CheckPowerShellVersion
+}
+
+function CheckContentExplorerPermissions
+{
+	 if (-not (Get-Command -Name Export-ContentExplorerData -ErrorAction SilentlyContinue)) 
+	 {
+		Write-Host "You don´t have the permissions required to execute the cmdlet Export-ContentExplorerData"
+		Write-Host "Please sign-in again with an account with these permissions assigned :"
+		Write-Host "`t* Content Explorer Content Viewer"
+		Write-Host "`t* Content Explorer List Viewer"
+		Write-Host "`nYou can connect manually running " -NoNewline
+		Write-Host ".\MPARR-ContentExplorerData2.ps1 -ManualConnection"
+		exit
+	 }
+}
+
+function UpdateMPARREntraApp
+{
+	Connect-MgGraph -Scopes "Application.ReadWrite.All", "AppRoleAssignment.ReadWrite.All", "Directory.ReadWrite.All", "User.ReadWrite.All" -NoWelcome
+	Clear-Host
+	
+	Write-Host "`n`n----------------------------------------------------------------------------------------"
+	Write-Host "`nMPARR Microsoft Entra App update!" -ForegroundColor DarkGreen
+	Write-Host "This menu helps to validate that the Microsoft Entra App previously created have all the API permissions required." -ForegroundColor DarkGreen
+	Write-Host "You will need to consent permissions Under Microsoft Entra portal to the app and the new permissions." -ForegroundColor DarkGreen
+	Write-Host "`n----------------------------------------------------------------------------------------"
+	
+	$CONFIGFILE = "$PSScriptRoot\ConfigFiles\laconfig.json"
+	$json = Get-Content -Raw -Path $CONFIGFILE
+	[PSCustomObject]$config = ConvertFrom-Json -InputObject $json
+	$AppID = $config.AppClientID
+	
+    $filter = "AppId eq '$AppId'"
+    $servicePrincipal = Get-MgServicePrincipal -All -Filter $filter
+    $roles = Get-MgServicePrincipalAppRoleAssignment -ServicePrincipalId ($servicePrincipal.Id)
+    if ($roles.AppRoleId -notcontains "230c1aed-a721-4c5d-9cb4-a90514e508ef")
+    {
+        Write-Host "Microsoft Graph API permission 'Reports.Read.All'" -NoNewLine
+        Write-Host "`tNot Found!" -ForegroundColor Red
+		Write-Host "App ID used:" $AppId
+        Write-Host "Press any key to continue..."
+        $key = ([System.Console]::ReadKey($true))
+        Write-Host "Adding permission"
+        # app parameters and API permissions definition
+        $params = @{
+            AppId = $AppID
+            RequiredResourceAccess = @(
+                @{
+                    ResourceAppId = "00000003-0000-0000-c000-000000000000"
+                    ResourceAccess = @(
+                        @{
+                            Id = "230c1aed-a721-4c5d-9cb4-a90514e508ef"
+                            Type = "Role"
+                        }
+                    )
+                }
+        
+            )
+        }
+        Update-MgApplicationByAppId @params
+        Write-Host "Permission added." -ForegroundColor Green
+        Write-Host "`nPlease go to the Azure portal to manually grant admin consent:"
+        Write-Host "https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationMenuBlade/~/CallAnAPI/appId/$($AppId)`n" -ForegroundColor Cyan    
+    }
+    else 
+    {
+        Write-Host "Microsoft Graph API permission..." -NoNewLine
+		Write-Host "`t'Reports.Read.All'" -NoNewLine -ForegroundColor Green
+        Write-Host "`tpermission already in place." 
+		Start-Sleep -s 3
+    }
+	if ($roles.AppRoleId -notcontains "332a536c-c7ef-4017-ab91-336970924f0d")
+    {
+        Write-Host "Microsoft Graph API permission 'Sites.Read.All'" -NoNewLine
+        Write-Host "`tNot Found!" -ForegroundColor Red
+		Write-Host "App ID used:" $AppId
+        Write-Host "Press any key to continue..."
+        $key = ([System.Console]::ReadKey($true))
+        Write-Host "Adding permission"
+        # app parameters and API permissions definition
+        $params = @{
+            AppId = $AppID
+            RequiredResourceAccess = @(
+                @{
+                    ResourceAppId = "00000003-0000-0000-c000-000000000000"
+                    ResourceAccess = @(
+                        @{
+                            Id = "332a536c-c7ef-4017-ab91-336970924f0d"
+                            Type = "Role"
+                        }
+                    )
+                }
+        
+            )
+        }
+        Update-MgApplicationByAppId @params
+        Write-Host "Permission added." -ForegroundColor Green
+        Write-Host "`nPlease go to the Azure portal to manually grant admin consent:"
+        Write-Host "https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationMenuBlade/~/CallAnAPI/appId/$($AppId)`n" -ForegroundColor Cyan    
+    }
+    else 
+    {
+        Write-Host "Microsoft Graph API permission..." -NoNewLine
+		Write-Host "`t'Sites.Read.All'" -NoNewLine -ForegroundColor Green
+        Write-Host "`tpermission already in place." 
+		Start-Sleep -s 3
+    }
 }
 
 function ReadNumber([int]$max, [string]$msg, [ref]$option)
@@ -264,6 +557,32 @@ function GetAuthToken
     }
 }
 
+function CheckCertificateInstalled($thumbprint)
+{
+	$var = "False"
+	$certificates = @(Get-ChildItem Cert:\CurrentUser\My | Where-Object {$_.EnhancedKeyUsageList -like "*Client Authentication*"}| Select-Object Thumbprint) 
+	#$thumbprint -in $certificates
+	foreach($certificate in $certificates)
+	{
+		if($thumbprint -in $certificate.Thumbprint)
+		{
+			$var = "True"
+		}
+	 }
+	 if($var -eq "True")
+	 {
+		Write-Host "Certificate validation..." -NoNewLine
+		Write-Host "`t`t`t`tPassed!" -ForegroundColor Green
+		return $var
+	 }else
+	 {
+		Write-Host "`nCertificate installed on this machine is missing!!!" -ForeGroundColor Yellow
+		Write-Host "To execute this script unattended a certificate needs to be installed, the same used under Microsoft Entra App"
+		Start-Sleep -s 1
+		return $var
+	 }
+}
+
 function EventHubConnection
 {
 	$CONFIGFILE = "$PSScriptRoot\ConfigFiles\laconfig.json"
@@ -324,6 +643,47 @@ function connect2service($ReadExport)
 		{
 			Connect-IPPSSession -CertificateThumbPrint $CertificateThumb -AppID $AppClientID -Organization $OnmicrosoftTenant
 		}
+	}
+}
+
+function connect2MicrosoftGraph
+{		
+	<#
+	.NOTES
+	If you cannot add the "Compliance Administrator" role to the Microsoft Entra App, for security reasons, you can execute with "Compliance Administrator" role 
+	this script using .\MPARR-PurviewSensitivityLabels.ps1 -ManualConnection
+	#>
+	if($ManualConnection)
+	{
+		Write-Host "`nAuthentication is required, please check your browser" -ForegroundColor Green
+		Import-Module Microsoft.Graph.Sites
+		Connect-MgGraph
+	}else
+	{
+		$CONFIGFILE = "$PSScriptRoot\ConfigFiles\laconfig.json"
+		$json = Get-Content -Raw -Path $CONFIGFILE
+		[PSCustomObject]$config = ConvertFrom-Json -InputObject $json
+		
+		$EncryptedKeys = $config.EncryptedKeys
+		$AppClientID = $config.AppClientID
+		$CertificateThumb = $config.CertificateThumb
+		$TenantGUID = $config.TenantGUID
+		if ($EncryptedKeys -eq "True")
+		{
+			$CertificateThumb = DecryptSharedKey $CertificateThumb
+		}
+		$status = CheckCertificateInstalled -thumbprint $CertificateThumb
+		
+		if($status -eq "True")
+		{
+			Connect-MgGraph -CertificateThumbPrint $CertificateThumb -AppID $AppClientID -TenantId $TenantGUID -NoWelcome
+		}else
+		{
+			Write-Host "`nThe Certificate set in laconfig.json don't match with the certificates installed on this machine, you can try to execute using manual connection, to do that extecute: "
+			Write-Host ".\MPARR-SPOSites.ps1 -ManualConnection" -ForeGroundColor Green
+			exit
+		}
+		
 	}
 }
 
@@ -617,6 +977,156 @@ function ExportToJsonFiles
 	Start-Sleep -s 2
 }
 
+function GetM365AllSites($service)
+{
+	connect2MicrosoftGraph
+	GetAuthToken
+	
+	if ($tokenExpiresOn.AddMinutes(5) -lt (Get-Date))
+	{
+		Write-Host "Refreshing access token..."
+		GetAuthToken
+	}
+
+	$headers = @{
+		'Content-Type' = 'application/json'
+		Accept = 'application/json'
+		Authorization = $GraphToken
+	}
+	
+	$results = @()
+	$tempArray = @()
+	$GetSPOSitesResults = @()
+	$GetODBSitesResults = @()
+	
+	$BaseURI = "https://graph.microsoft.com/v1.0/sites"
+	$URI = "$BaseURI/getAllSites"
+
+	# Run the cmdlet to get Sites
+	$results = Invoke-RestMethod -Method Get -Uri $URI -Headers $headers -ErrorAction Stop
+	$tempArray += $results.value
+	
+	foreach($item in $tempArray)
+	{
+		if($item.isPersonalSite -eq "true")
+		{
+			$GetODBSitesResults += $item.webUrl
+		}else
+		{
+			$GetSPOSitesResults += $item.webUrl
+		}
+	}
+
+	# Status update
+	$recordsSPOCount = $GetSPOSitesResults.Count
+	$recordsODBCount = $GetODBSitesResults.Count
+
+	# If there is no data, skip
+	if ($GetSPOSitesResults.Count -eq 0)
+	{
+		Write-Host "`nNo SharePoint Online Sites was found on your Tenant" -ForeGroundColor Yellow
+		exit 
+	}elseif ($GetODBSitesResults.Count -eq 0)
+	{
+		Write-Host "`nNo OneDrive for Business accounts was found on your Tenant" -ForeGroundColor Yellow
+		exit 
+	}
+	
+	if($service -eq "SharePoint")
+	{
+		Write-Information -MessageData "$recordsSPOCount records returned from SharePoint Online Sites" -InformationAction Continue
+		return $GetSPOSitesResults
+	}
+	if($service -eq "OneDrive")
+	{
+		Write-Information -MessageData "$recordsODBCount records returned from OneDrive for Business" -InformationAction Continue
+		return $GetODBSitesResults
+	}
+
+}
+
+function GetM365Accounts($service)
+{
+	connect2MicrosoftGraph
+	GetAuthToken
+	
+	if ($tokenExpiresOn.AddMinutes(5) -lt (Get-Date))
+	{
+		Write-Host "Refreshing access token..."
+		GetAuthToken
+	}
+
+	$headers = @{
+		'Content-Type' = 'application/json'
+		Accept = 'application/json'
+		Authorization = $GraphToken
+	}
+	
+	$results = @()
+	$tempArray = @()
+	$GetExoM365Accounts = @()
+	$GetTeamsM365Accounts = @()
+	$ExoM365AccountsNotLicensed = @()
+	$TeamsM365AccountsNotLicensed = @()
+	
+	$ReportName = "Office365ActiveUserDetail"
+	$BaseURI = "https://graph.microsoft.com/v1.0/reports"
+	$URI = "$BaseURI/get$($ReportName)"
+	$URI += "(period='D7')"
+
+	# Run the cmdlet to get Sites
+	$results = Invoke-RestMethod -Method Get -Uri $URI -Headers $headers -ErrorAction Stop
+	$tempArray += $results | ConvertFrom-Csv
+	$EXOLicense = "Has Exchange License"
+	$TeamsLicense = "Has Teams License"
+	$M365UPN = "User Principal Name"
+	
+	
+	foreach($item in $tempArray)
+	{
+		if($item.$EXOLicense -eq "true")
+		{
+			$GetExoM365Accounts += $item."User Principal Name"
+		}else
+		{
+			$ExoM365AccountsNotLicensed += $item."User Principal Name"
+		}
+		if($item.$TeamsLicense -eq "true")
+		{
+			$GetTeamsM365Accounts += $item."User Principal Name"
+		}else
+		{
+			$TeamsM365AccountsNotLicensed += $item."User Principal Name"
+		}
+	}
+
+	# Status update
+	$recordsEXOCount = $GetExoM365Accounts.Count
+	$recordsTeamsCount = $GetTeamsM365Accounts.Count
+
+	# If there is no data, skip
+	if ($GetExoM365Accounts.Count -eq 0)
+	{
+		Write-Host "`nNo Exchange Online licensed accounts was found on your Tenant" -ForeGroundColor Yellow
+		exit 
+	}elseif ($GetTeamsM365Accounts.Count -eq 0)
+	{
+		Write-Host "`nNo Microsoft Teams licensed accounts was found on your Tenant" -ForeGroundColor Yellow
+		exit 
+	}
+	
+	if($service -eq "Exchange")
+	{
+		Write-Host "$recordsEXOCount licensed accounts returned from Exchange Online"
+		return $GetExoM365Accounts		
+	}elseif($service -eq "Teams")
+	{
+		Write-Host "$recordsTeamsCount licensed accounts returned from Microsoft Teams"
+		return $GetTeamsM365Accounts
+	}
+
+}
+
 function ReadWorkload($ReadExport)
 {
 	$ExportTo = $ReadExport
@@ -679,6 +1189,7 @@ function ReadTagType($ReadExport)
 	
 	if($ExportTo -eq 'File')
 	{
+		cls
 		$choices  = '&Retention Labels','Sensitive &Information Type','&Sensitivity Labels','&Trainable Classifiers'
 		$decision = $Host.UI.PromptForChoice("", "`nPlease select the classifier that you want to use in your query :", $choices, 2)
 		if ($decision -eq 0)
@@ -911,6 +1422,35 @@ function ExportPageSize($PageSize)
 
 function ExecuteExportCmdlet($TagType, $Workload, $Tag, $PageSize)
 {
+	if($Workload -eq "SharePoint")
+	{
+		$DetailedData = GetM365AllSites -service $Workload
+		$DetailedDataCount = $DetailedData.count
+		Write-Host "Records found for $Workload :" -NoNewline
+		Write-Host "`t$DetailedDataCount" -ForeGroundColor Green
+	}
+	if($Workload -eq "OneDrive")
+	{
+		$DetailedData = GetM365AllSites -service $Workload
+		$DetailedDataCount = $DetailedData.count
+		Write-Host "Records found for $Workload :" -NoNewline
+		Write-Host "`t$DetailedDataCount" -ForeGroundColor Green
+	}
+	if($Workload -eq "Exchange")
+	{
+		$DetailedData = GetM365Accounts -service $Workload
+		$DetailedDataCount = $DetailedData.count
+		Write-Host "Records found for $Workload :" -NoNewline
+		Write-Host "`t$DetailedDataCount" -ForeGroundColor Green
+	}
+	if($Workload -eq "Teams")
+	{
+		$DetailedData = GetM365Accounts -service $Workload
+		$DetailedDataCount = $DetailedData.count
+		Write-Host "Records found for $Workload :" -NoNewline
+		Write-Host "`t$DetailedDataCount" -ForeGroundColor Green
+	}
+	
 	if($TagType -eq 'Sensitivity')
 	{
 		$tagname = $tag.replace('/','-')
@@ -926,62 +1466,99 @@ function ExecuteExportCmdlet($TagType, $Workload, $Tag, $PageSize)
 	$ExportSummary = "ContentExplorerExport-Summary"+$date2+".csv"
 	$path = $PSScriptRoot+"\ContentExplorerExport\"+$ExportFile
 	
-	if($MassExportToCsv)
+	foreach($GranularValue in $DetailedData)
 	{
-		Write-Host "`nFile to be written :" -NoNewLine
-		Write-Host $ExportFile -ForeGroundColor Green 
-		Write-Host "`nFile to be copied at :" -NoNewLine
-		Write-Host $PSScriptRoot"\ContentExplorerExport" -ForeGroundColor Green 
-		Write-Host "`n"
-	}
-	
-	$CEResults = @()
-	$query = Export-ContentExplorerData -TagType $TagType -TagName $tag -PageSize $PageSize -Workload $Workload 
-	$CmdletUsed = "Export-ContentExplorerData -TagType $TagType -TagName '$($tag)' -PageSize $PageSize -Workload $Workload"
-	$var = $query.count
-	$Total = $query[0].TotalCount
-	$TotalExported = 0
-	$remaining = $Total
-	$ErrorExportArray = @()
-	$SummaryExportArray = @()
-	
-	if($Total -eq 0)
-	{
-		Write-Host "`n### Your query don't returned records. ###" -ForeGroundColor Blue
-		Write-Host "Query tested with:"
-		Write-Host "Service `t: "$Workload
-		Write-Host "Classifier type : "$TagType
-		Write-Host "Classifier name : "$tag
-		Write-Host "`n### File was not created." -ForeGroundColor Blue
-		$path2 = $PSScriptRoot+"\ContentExplorerExport\"+$ExportError
-		$ErrorExportArray = @(
-			[pscustomobject]@{TagType=$TagType;TagName=$tag;Workload=$Workload;ExportedFiles=$Total;TotalMatches=$Total;CmdletUsed=$CmdletUsed}
-		)
-		$ErrorExportArray | Export-Csv -Path $path2 -Force -Append | Out-Null
-		return
-	}else
-	{
-		Write-Host "Total matches returned :" -NoNewLine
-		Write-Host $remaining -ForeGroundColor Green	
-	}
-
-	While ($query[0].MorePagesAvailable -eq 'True') {
-		$CEResults += $query[1..$var]
-		$query = Export-ContentExplorerData -TagType $TagType -TagName $tag -PageSize $PageSize -Workload $Workload -PageCookie $query[0].PageCookie 
-		$remaining -= ($var - 1)
-		Write-Host "Total matches remaining to process :" -NoNewLine
-		trap { 'Error processing json, it is continue processing...'; continue }
-		Write-Host $remaining -ForeGroundColor Green
-		$TotalExported += ($query.count - 1)
-		$CEResults | Export-Csv -Path $path -NTI -Force -Append | Out-Null
 		$CEResults = @()
-	}
+		if($Workload -eq "SharePoint")
+		{
+			$query = Export-ContentExplorerData -TagType $TagType -TagName $tag -PageSize $PageSize -Workload $Workload -SiteUrl $GranularValue
+			$CmdletUsed = "Export-ContentExplorerData -TagType $TagType -TagName '$($tag)' -PageSize $PageSize -Workload $Workload -SiteUrl $GranularValue"
+		}
+		if($Workload -eq "OneDrive")
+		{
+			$query = Export-ContentExplorerData -TagType $TagType -TagName $tag -PageSize $PageSize -Workload $Workload -SiteUrl $GranularValue
+			$CmdletUsed = "Export-ContentExplorerData -TagType $TagType -TagName '$($tag)' -PageSize $PageSize -Workload $Workload -SiteUrl $GranularValue"
+		}
+		if($Workload -eq "Exchange")
+		{
+			$query = Export-ContentExplorerData -TagType $TagType -TagName $tag -PageSize $PageSize -Workload $Workload -UserPrincipalName $GranularValue
+			$CmdletUsed = "Export-ContentExplorerData -TagType $TagType -TagName '$($tag)' -PageSize $PageSize -Workload $Workload -UserPrincipalName $GranularValue"
+		}
+		if($Workload -eq "Teams")
+		{
+			$query = Export-ContentExplorerData -TagType $TagType -TagName $tag -PageSize $PageSize -Workload $Workload -UserPrincipalName $GranularValue
+			$CmdletUsed = "Export-ContentExplorerData -TagType $TagType -TagName '$($tag)' -PageSize $PageSize -Workload $Workload -UserPrincipalName $GranularValue"
+		}
+		Write-Host "Cmdlet used : " -NoNewLine
+		Write-Host "$CmdletUsed" -ForeGroundColor Green
+		$TotalResults = ($query.count) - 1
+		Write-Host "Total returned : $TotalResults"
+		
+		$var = $query.count
+		$Total = $query[0].TotalCount
+		$TotalExported = 0
+		$remaining = $Total
+		$ErrorExportArray = @()
+		$SummaryExportArray = @()
+		
+		if($Total -eq 0)
+		{
+			Write-Host "`n### Your query don't returned records. ###" -ForeGroundColor Blue
+			Write-Host "Query tested with:"
+			Write-Host "Service `t: "$Workload
+			Write-Host "Classifier type : "$TagType
+			Write-Host "Classifier name : "$tag
+			Write-Host "Value used`t:"$GranularValue
+			Write-Host "### File was not created." -ForeGroundColor Blue
+			$path2 = $PSScriptRoot+"\ContentExplorerExport\"+$ExportError
+			$ErrorExportArray = @(
+				[pscustomobject]@{TagType=$TagType;TagName=$tag;Workload=$Workload;ExportedFiles=$Total;TotalMatches=$Total;CmdletUsed=$CmdletUsed}
+			)
+			$ErrorExportArray | Export-Csv -Path $path2 -Force -Append | Out-Null
+		}else
+		{
+			Write-Host "Total matches returned :" -NoNewLine
+			Write-Host $remaining -ForeGroundColor Green	
+		}
 
-	if ($query.count -gt 0)
-	{
-		$CEResults += $query[1..$remaining]
-		$TotalExported += ($query.count - 1)
-		$CEResults | Export-Csv -Path $path -NTI -Force -Append | Out-Null
+		While ($query[0].MorePagesAvailable -eq 'True') {
+			$CEResults += $query[1..$var]
+			if($Workload -eq "SharePoint")
+			{
+				$query = Export-ContentExplorerData -TagType $TagType -TagName $tag -PageSize $PageSize -Workload $Workload -SiteUrl $GranularValue -PageCookie $query[0].PageCookie
+				$CmdletUsed = "Export-ContentExplorerData -TagType $TagType -TagName '$($tag)' -PageSize $PageSize -Workload $Workload -SiteUrl $GranularValue"
+			}
+			if($Workload -eq "OneDrive")
+			{
+				$query = Export-ContentExplorerData -TagType $TagType -TagName $tag -PageSize $PageSize -Workload $Workload -SiteUrl $GranularValue -PageCookie $query[0].PageCookie
+				$CmdletUsed = "Export-ContentExplorerData -TagType $TagType -TagName '$($tag)' -PageSize $PageSize -Workload $Workload -SiteUrl $GranularValue"
+			}
+			if($Workload -eq "Exchange")
+			{
+				$query = Export-ContentExplorerData -TagType $TagType -TagName $tag -PageSize $PageSize -Workload $Workload -UserPrincipalName $GranularValue -PageCookie $query[0].PageCookie
+				$CmdletUsed = "Export-ContentExplorerData -TagType $TagType -TagName '$($tag)' -PageSize $PageSize -Workload $Workload -UserPrincipalName $GranularValue"
+			}
+			if($Workload -eq "Teams")
+			{
+				$query = Export-ContentExplorerData -TagType $TagType -TagName $tag -PageSize $PageSize -Workload $Workload -UserPrincipalName $GranularValue -PageCookie $query[0].PageCookie
+				$CmdletUsed = "Export-ContentExplorerData -TagType $TagType -TagName '$($tag)' -PageSize $PageSize -Workload $Workload -UserPrincipalName $GranularValue"
+			}
+			
+			$remaining -= ($var - 1)
+			Write-Host "Total matches remaining to process :" -NoNewLine
+			trap { 'Error processing json, it is continue processing...'; continue }
+			Write-Host $remaining -ForeGroundColor Green
+			$TotalExported += ($query.count - 1)
+			$CEResults | Export-Csv -Path $path -NTI -Force -Append | Out-Null
+			$CEResults = @()
+		}
+
+		if ($query.count -gt 0)
+		{
+			$CEResults += $query[1..$remaining]
+			$TotalExported += ($query.count - 1)
+			$CEResults | Export-Csv -Path $path -NTI -Force -Append | Out-Null
+		}
 	}
 	
 	#Generate a summary with the total results
@@ -992,15 +1569,42 @@ function ExecuteExportCmdlet($TagType, $Workload, $Tag, $PageSize)
 	$SummaryExportArray | Export-Csv -Path $pathsummary -Force -Append
 }
 
-function ExportDataToLogsAnalytics($TagType, $Workload, $Tag, $PageSize)
+function ExportContentExplorerDetailsTo($TagType, $Workload, $Tag, $PageSize, $GranularValue, $DataConnector)
 {
 	#Generate the query to collect the data
+	Write-Host "`nData Connector set to: $DataConnector `n" -ForeGroundColor DarkBlue
 	$date2 = Get-Date -Format "yyyyMMdd"
 	$ExportError = "ContentExplorerExport-ErrorLogsAnalytics-"+$date2+".csv"
 	$ExportSummary = "ContentExplorerExport-SummaryLogsAnalytics"+$date2+".csv"
+	$ExportFile = "ContentExplorerExport - "+$TagType+" - "+$Tag+" - "+$Workload+" - "+$date2+".csv"
+	$ExportJSONFile = "ContentExplorerExport - "+$TagType+" - "+$Tag+" - "+$Workload+" - "+$date2+".json"
+	$path = $PSScriptRoot+"\ContentExplorerExport\"+$ExportFile
+	$pathJSON = $PSScriptRoot+"\ContentExplorerExport\"+$ExportJSONFile
 	$CEResults = @()
-	$query = Export-ContentExplorerData -TagType $TagType -TagName $tag -PageSize $PageSize -Workload $Workload
-	$CmdletUsed = "Export-ContentExplorerData -TagType $TagType -TagName '$($tag)' -PageSize $PageSize -Workload $Workload"
+	Write-Host "Getting data from... "$GranularValue -ForeGroundColor Magenta
+	if($Workload -eq "SharePoint")
+	{
+		$query = Export-ContentExplorerData -TagType $TagType -TagName $tag -PageSize $PageSize -Workload $Workload -SiteUrl $GranularValue
+		$CmdletUsed = "Export-ContentExplorerData -TagType $TagType -TagName '$($tag)' -PageSize $PageSize -Workload $Workload -SiteUrl $GranularValue"
+	}
+	if($Workload -eq "OneDrive")
+	{
+		$query = Export-ContentExplorerData -TagType $TagType -TagName $tag -PageSize $PageSize -Workload $Workload -SiteUrl $GranularValue
+		$CmdletUsed = "Export-ContentExplorerData -TagType $TagType -TagName '$($tag)' -PageSize $PageSize -Workload $Workload -SiteUrl $GranularValue"
+	}
+	if($Workload -eq "Exchange")
+	{
+		$query = Export-ContentExplorerData -TagType $TagType -TagName $tag -PageSize $PageSize -Workload $Workload -UserPrincipalName $GranularValue
+		$CmdletUsed = "Export-ContentExplorerData -TagType $TagType -TagName '$($tag)' -PageSize $PageSize -Workload $Workload -UserPrincipalName $GranularValue"
+	}
+	if($Workload -eq "Teams")
+	{
+		$query = Export-ContentExplorerData -TagType $TagType -TagName $tag -PageSize $PageSize -Workload $Workload -UserPrincipalName $GranularValue
+		$CmdletUsed = "Export-ContentExplorerData -TagType $TagType -TagName '$($tag)' -PageSize $PageSize -Workload $Workload -UserPrincipalName $GranularValue"
+	}
+	
+	Write-Host "Cmdlet used : "$CmdletUsed -ForeGroundColor Green
+	
 	$var = $query.count
 	$Total = $query[0].TotalCount
 	$TotalExported = 0
@@ -1034,7 +1638,27 @@ function ExportDataToLogsAnalytics($TagType, $Workload, $Tag, $PageSize)
 
 	While ($query[0].MorePagesAvailable -eq 'True') {
 		$CEResults += $query[1..$var]
-		$query = Export-ContentExplorerData -TagType $TagType -TagName $tag -PageSize $PageSize -Workload $Workload -PageCookie $query[0].PageCookie 
+		if($Workload -eq "SharePoint")
+		{
+			$query = Export-ContentExplorerData -TagType $TagType -TagName $tag -PageSize $PageSize -Workload $Workload -SiteUrl $GranularValue -PageCookie $query[0].PageCookie
+			$CmdletUsed = "Export-ContentExplorerData -TagType $TagType -TagName '$($tag)' -PageSize $PageSize -Workload $Workload -SiteUrl $GranularValue"
+		}
+		if($Workload -eq "OneDrive")
+		{
+			$query = Export-ContentExplorerData -TagType $TagType -TagName $tag -PageSize $PageSize -Workload $Workload -SiteUrl $GranularValue -PageCookie $query[0].PageCookie
+			$CmdletUsed = "Export-ContentExplorerData -TagType $TagType -TagName '$($tag)' -PageSize $PageSize -Workload $Workload -SiteUrl $GranularValue"
+		}
+		if($Workload -eq "Exchange")
+		{
+			$query = Export-ContentExplorerData -TagType $TagType -TagName $tag -PageSize $PageSize -Workload $Workload -UserPrincipalName $GranularValue -PageCookie $query[0].PageCookie
+			$CmdletUsed = "Export-ContentExplorerData -TagType $TagType -TagName '$($tag)' -PageSize $PageSize -Workload $Workload -UserPrincipalName $GranularValue"
+		}
+		if($Workload -eq "Teams")
+		{
+			$query = Export-ContentExplorerData -TagType $TagType -TagName $tag -PageSize $PageSize -Workload $Workload -UserPrincipalName $GranularValue -PageCookie $query[0].PageCookie
+			$CmdletUsed = "Export-ContentExplorerData -TagType $TagType -TagName '$($tag)' -PageSize $PageSize -Workload $Workload -UserPrincipalName $GranularValue"
+		}
+
 		$i = 1
 		While($i -lt $query.count)
 		{
@@ -1065,7 +1689,25 @@ function ExportDataToLogsAnalytics($TagType, $Workload, $Tag, $PageSize)
 			$log_analytics_array += $i
         }    
 
-        Post-LogAnalyticsData -LogAnalyticsTableName $TableLA -body $log_analytics_array
+        if($DataConnector -eq "Event Hub")
+		{
+			$EventHubInstance.PublishToEventHub($log_analytics_array, $ErrorFile)
+		}elseif($DataConnector -eq "MassCSVExport")
+		{
+			$CEResults | Export-Csv -Path $path -NTI -Force -Append | Out-Null
+			Write-Host "Data exported to..." -NoNewline
+			Write-Host "`n$path" -ForeGroundColor Cyan
+		}elseif($DataConnector -eq "MassJsonExport")
+		{
+			$json = $log_analytics_array | ConvertTo-Json -Depth 3
+			$json | Add-Content -Path $pathJSON
+			Write-Host "`nData exported to... :" -NoNewLine
+			Write-Host $pathJSON -ForeGroundColor Cyan
+		}else
+		{
+			Post-LogAnalyticsData -LogAnalyticsTableName $TableLA -body $log_analytics_array
+		}
+		
 		#Generate a summary with the total results
 		$SummaryExportArray = @(
 			[pscustomobject]@{TagType=$TagType;TagName=$tag;Workload=$Workload;MatchedFiles=$Total;ExportedFiles=$log_analytics_array.count;TableName=$TableLA;CmdletUsed=$CmdletUsed}
@@ -1082,7 +1724,23 @@ function ExportDataToLogsAnalytics($TagType, $Workload, $Tag, $PageSize)
 			$log_analytics_array += $i
         }    
 
-        Post-LogAnalyticsData -LogAnalyticsTableName $TableLA -body $log_analytics_array
+        if($DataConnector -eq "Event Hub")
+		{
+			$EventHubInstance.PublishToEventHub($log_analytics_array, $ErrorFile)
+		}elseif($DataConnector -eq "MassCSVExport")
+		{
+			$CEResults | Export-Csv -Path $path -NTI -Force -Append | Out-Null
+		}elseif($DataConnector -eq "MassJsonExport")
+		{
+			$json = $log_analytics_array | ConvertTo-Json -Depth 3
+			$json | Add-Content -Path $pathJSON
+			Write-Host "`nData exported to... :" -NoNewLine
+			Write-Host $pathJSON -ForeGroundColor Cyan
+		}else
+		{
+			Post-LogAnalyticsData -LogAnalyticsTableName $TableLA -body $log_analytics_array
+		}
+		
 		#Generate a summary with the total results
 		$SummaryExportArray = @(
 			[pscustomobject]@{TagType=$TagType;TagName=$tag;Workload=$Workload;MatchedFiles=$Total;ExportedFiles=$log_analytics_array.count;TableName=$TableLA;CmdletUsed=$CmdletUsed}
@@ -1099,7 +1757,23 @@ function ExportDataToLogsAnalytics($TagType, $Workload, $Tag, $PageSize)
 			$log_analytics_array += $i
         }    
 
-        Post-LogAnalyticsData -LogAnalyticsTableName $TableLA -body $log_analytics_array
+        if($DataConnector -eq "Event Hub")
+		{
+			$EventHubInstance.PublishToEventHub($log_analytics_array, $ErrorFile)
+		}elseif($DataConnector -eq "MassCSVExport")
+		{
+			$CEResults | Export-Csv -Path $path -NTI -Force -Append | Out-Null
+		}elseif($DataConnector -eq "MassJsonExport")
+		{
+			$json = $log_analytics_array | ConvertTo-Json -Depth 3
+			$json | Add-Content -Path $pathJSON
+			Write-Host "`nData exported to... :" -NoNewLine
+			Write-Host $pathJSON -ForeGroundColor Cyan
+		}else
+		{
+			Post-LogAnalyticsData -LogAnalyticsTableName $TableLA -body $log_analytics_array
+		}
+		
 		#Generate a summary with the total results
 		$SummaryExportArray = @(
 			[pscustomobject]@{TagType=$TagType;TagName=$tag;Workload=$Workload;MatchedFiles=$Total;ExportedFiles=$log_analytics_array.count;TableName=$TableLA;CmdletUsed=$CmdletUsed}
@@ -1116,7 +1790,22 @@ function ExportDataToLogsAnalytics($TagType, $Workload, $Tag, $PageSize)
 			$log_analytics_array += $i
         }    
 
-        Post-LogAnalyticsData -LogAnalyticsTableName $TableLA -body $log_analytics_array
+        if($DataConnector -eq "Event Hub")
+		{
+			$EventHubInstance.PublishToEventHub($log_analytics_array, $ErrorFile)
+		}elseif($DataConnector -eq "MassCSVExport")
+		{
+			$CEResults | Export-Csv -Path $path -NTI -Force -Append | Out-Null
+		}elseif($DataConnector -eq "MassJsonExport")
+		{
+			$json = $log_analytics_array | ConvertTo-Json -Depth 3
+			$json | Add-Content -Path $pathJSON
+			Write-Host "`nData exported to... :" -NoNewLine
+			Write-Host $pathJSON -ForeGroundColor Cyan
+		}else
+		{
+			Post-LogAnalyticsData -LogAnalyticsTableName $TableLA -body $log_analytics_array
+		}
 		#Generate a summary with the total results
 		$SummaryExportArray = @(
 			[pscustomobject]@{TagType=$TagType;TagName=$tag;Workload=$Workload;MatchedFiles=$Total;ExportedFiles=$log_analytics_array.count;TableName=$TableLA;CmdletUsed=$CmdletUsed}
@@ -1125,9 +1814,10 @@ function ExportDataToLogsAnalytics($TagType, $Workload, $Tag, $PageSize)
 	}
 }
 
-function CollectData($TagType, $Workload, $PageSize, $ReadExport)
+function CollectData($TagType, $Workload, $PageSize, $ReadExport, $ExportDataTo)
 {
 	$ExportTo = $ReadExport
+	$Connector = $ExportDataTo
 	
 	if($ExportTo -eq 'File')
 	{
@@ -1234,200 +1924,190 @@ function CollectData($TagType, $Workload, $PageSize, $ReadExport)
 		
 		foreach($service in $Workload)
 		{
-			foreach($tag in $TagType)
+			$DetailedData = @()
+			$DetailedDataCount = 0
+			$Counter = 1
+			if($service -eq "SharePoint")
 			{
-				if($tag -eq 'Retention')
+				$DetailedData = GetM365AllSites -service $service
+				$DetailedDataCount = $DetailedData.count
+			}
+			if($service -eq "OneDrive")
+			{
+				$DetailedData = GetM365AllSites -service $service
+				$DetailedDataCount = $DetailedData.count
+			}
+			if($service -eq "Exchange")
+			{
+				$DetailedData = GetM365Accounts -service $service
+				$DetailedDataCount = $DetailedData.count 
+			}
+			if($service -eq "Teams")
+			{
+				$DetailedData = GetM365Accounts -service $service
+				$DetailedDataCount = $DetailedData.count
+			}
+			
+			foreach($value in $DetailedData)
+			{
+				Write-Host "Progress..." -NoNewLine
+				Write-Host "$Counter of $DetailedDataCount" -ForeGroundColor Blue
+				foreach($tag in $TagType)
 				{
-					$tag = $tag
-					
-					if (Test-Path "$PSScriptRoot\ConfigFiles\MPARR-RetentionLabelsList.json")
+					if($tag -eq 'Retention')
 					{
-						$RetentionSelected = "$PSScriptRoot\ConfigFiles\MPARR-RetentionLabelsList.json"
-					
-						$jsonRL = Get-Content -Raw -Path $RetentionSelected
-						[PSCustomObject]$rls = ConvertFrom-Json -InputObject $jsonRL
-						$RetentionLabels = @()
+						$tag = $tag
 						
-						foreach ($rld in $rls.psobject.Properties)
+						if (Test-Path "$PSScriptRoot\ConfigFiles\MPARR-RetentionLabelsList.json")
 						{
-							if ($rls."$($rld.Name)" -eq "True")
+							$RetentionSelected = "$PSScriptRoot\ConfigFiles\MPARR-RetentionLabelsList.json"
+						
+							$jsonRL = Get-Content -Raw -Path $RetentionSelected
+							[PSCustomObject]$rls = ConvertFrom-Json -InputObject $jsonRL
+							$RetentionLabels = @()
+							
+							foreach ($rld in $rls.psobject.Properties)
 							{
-								$RetentionLabels += $rld.Name
-								Write-Host $rld.Name
+								if ($rls."$($rld.Name)" -eq "True")
+								{
+									$RetentionLabels += $rld.Name
+									#Write-Host $rld.Name
+								}
+							}
+							$RetentionLabels = @($RetentionLabels | ForEach-Object {[PSCustomObject]@{'Name' = $_}})
+						}else
+						{
+							$RetentionLabels = @()
+							$RetentionLabels = Get-ComplianceTag | select Name
+						}
+						$TotalRT = $RetentionLabels.count
+						$ProgressRT = 1
+						
+						Write-Host "`nTotal Retention Labels found:" -NoNewLine
+						Write-Host "`t"$TotalRT -ForeGroundColor Green
+						
+						foreach($rl in $RetentionLabels)
+						{
+							ExportContentExplorerDetailsTo -TagType $tag -Workload $service -Tag $rl.name -GranularValue $value -PageSize $PageSize -DataConnector $Connector
+						}
+					}
+					if($tag -eq 'Sensitivity')
+					{
+						if (Test-Path "$PSScriptRoot\ConfigFiles\MPARR-SensitivityLabelsList.json")
+						{
+							$SensitivitySelected = "$PSScriptRoot\ConfigFiles\MPARR-SensitivityLabelsList.json"
+						
+							$jsonSL = Get-Content -Raw -Path $SensitivitySelected
+							[PSCustomObject]$sls = ConvertFrom-Json -InputObject $jsonSL
+							$ListSensitivityLabels = @()
+							
+							foreach ($sld in $sls.psobject.Properties)
+							{
+								if ($sls."$($sld.Name)" -eq "True")
+								{
+									$ListSensitivityLabels += $sld.Name
+								}
+							}
+						}else
+						{
+							$SensitivityLabels = Get-Label | select DisplayName,ParentLabelDisplayName
+							$ListSensitivityLabels = @()
+							
+							foreach($label in $SensitivityLabels)
+							{
+								if($label.ParentLabelDisplayName -ne $Null)
+								{
+									$ListSensitivityLabels += $label.ParentLabelDisplayName+"/"+$label.DisplayName		
+								}else
+								{
+									$ListSensitivityLabels += $label.DisplayName
+								}
 							}
 						}
-						$RetentionLabels = @($RetentionLabels | ForEach-Object {[PSCustomObject]@{'Name' = $_}})
-					}else
-					{
-						$RetentionLabels = @()
-						$RetentionLabels = Get-ComplianceTag | select Name
-					}
-					$TotalRT = $RetentionLabels.count
-					$ProgressRT = 1
-					
-					Write-Host "`nTotal Retention Labels found:" -NoNewLine
-					Write-Host "`t"$TotalRT -ForeGroundColor Green
-					
-					foreach($rl in $RetentionLabels)
-					{
-						if($MassExportToCsv)
+						$tempFolder = $ListSensitivityLabels
+						$SensitivityLabelsSelection = @()
+						
+						foreach ($label in $tempFolder){$SensitivityLabelsSelection += @([pscustomobject]@{Name=$label})}
+						
+						$TotalSL = $SensitivityLabelsSelection.count
+						$ProgressSL = 1
+						
+						Write-Host "`nTotal Sensitivity Labels found:" -NoNewLine
+						Write-Host "`t"$TotalSL -ForeGroundColor Green
+						
+						foreach($sl in $SensitivityLabelsSelection)
 						{
-							Write-Host "`nTotal progress : " -NoNewLine
-							Write-Host $ProgressRT"/"$TotalRT -ForeGroundColor Green
-							ExecuteExportCmdlet -TagType $tag -Workload $service -Tag $rl.name -PageSize $PageSize
-							$ProgressRT++
+							ExportContentExplorerDetailsTo -TagType $tag -Workload $service -Tag $sl.name -GranularValue $value -PageSize $PageSize -DataConnector $Connector
 						}
-						if(-Not $MassExportToCsv)
+						
+					}
+					if($tag -eq 'SensitiveInformationType')
+					{
+						if (Test-Path "$PSScriptRoot\ConfigFiles\MPARR-SensitiveInfoTypesList.json")
 						{
-							ExportDataToLogsAnalytics -TagType $tag -Workload $service -Tag $rl.name -PageSize $PageSize
+							$SITsSelected = "$PSScriptRoot\ConfigFiles\MPARR-SensitiveInfoTypesList.json"
+						
+							$jsonSIT = Get-Content -Raw -Path $SITsSelected
+							[PSCustomObject]$sitss = ConvertFrom-Json -InputObject $jsonSIT
+							$SITs = @()
+							
+							foreach ($sitd in $sitss.psobject.Properties)
+							{
+								if ($sitss."$($sitd.Name)" -eq "True")
+								{
+									$SITs += $sitd.Name
+								}
+							}
+							$SITs = @($SITs | ForEach-Object {[PSCustomObject]@{'Name' = $_}})
+						}else
+						{
+							$SITs = Get-DlpSensitiveInformationType | select Name
+						}
+						$TotalSIT = $SITs.count
+						$ProgressSIT = 1
+						
+						Write-Host "`nTotal Sensitive Information Types found:" -NoNewLine
+						Write-Host "`t"$TotalSIT -ForeGroundColor Green
+						
+						foreach($sit in $SITs)
+						{
+							ExportContentExplorerDetailsTo -TagType $tag -Workload $service -Tag $sit.name -GranularValue $value -PageSize $PageSize -DataConnector $Connector
+						}
+					}
+					if($tag -eq 'TrainableClassifier')
+					{
+						$TCSelected = "$PSScriptRoot\ConfigFiles\MPARR-TrainableClassifiersList.json"
+						
+						$json = Get-Content -Raw -Path $TCSelected
+						[PSCustomObject]$tcs = ConvertFrom-Json -InputObject $json
+						$TClist = @()
+						
+						foreach ($tcd in $tcs.psobject.Properties)
+						{
+							if ($tcs."$($tcd.Name)" -eq "True")
+							{
+								$TClist += $tcd.Name
+							}
+						}
+						
+						$tempFolder = $TClist
+						$TCSelection = @()
+						
+						foreach ($tcd in $tempFolder){$TCSelection += @([pscustomobject]@{Name=$tcd})}
+						
+						$TotalTC = $TCSelection.count
+						$ProgressTC = 1
+						
+						Write-Host "`nTotal Trainable Classifiers found:" -NoNewLine
+						Write-Host "`t"$TotalTC -ForeGroundColor Green
+						
+						foreach($tc in $TCSelection)
+						{
+							ExportContentExplorerDetailsTo -TagType $tag -Workload $service -Tag $tc.name -GranularValue $value -PageSize $PageSize -DataConnector $Connector
 						}
 					}
 				}
-				if($tag -eq 'Sensitivity')
-				{
-					if (Test-Path "$PSScriptRoot\ConfigFiles\MPARR-SensitivityLabelsList.json")
-					{
-						$SensitivitySelected = "$PSScriptRoot\ConfigFiles\MPARR-SensitivityLabelsList.json"
-					
-						$jsonSL = Get-Content -Raw -Path $SensitivitySelected
-						[PSCustomObject]$sls = ConvertFrom-Json -InputObject $jsonSL
-						$ListSensitivityLabels = @()
-						
-						foreach ($sld in $sls.psobject.Properties)
-						{
-							if ($sls."$($sld.Name)" -eq "True")
-							{
-								$ListSensitivityLabels += $sld.Name
-							}
-						}
-					}else
-					{
-						$SensitivityLabels = Get-Label | select DisplayName,ParentLabelDisplayName
-						$ListSensitivityLabels = @()
-						
-						foreach($label in $SensitivityLabels)
-						{
-							if($label.ParentLabelDisplayName -ne $Null)
-							{
-								$ListSensitivityLabels += $label.ParentLabelDisplayName+"/"+$label.DisplayName		
-							}else
-							{
-								$ListSensitivityLabels += $label.DisplayName
-							}
-						}
-					}
-					$tempFolder = $ListSensitivityLabels
-					$SensitivityLabelsSelection = @()
-					
-					foreach ($label in $tempFolder){$SensitivityLabelsSelection += @([pscustomobject]@{Name=$label})}
-					
-					$TotalSL = $SensitivityLabelsSelection.count
-					$ProgressSL = 1
-					
-					Write-Host "`nTotal Sensitivity Labels found:" -NoNewLine
-					Write-Host "`t"$TotalSL -ForeGroundColor Green
-					
-					foreach($sl in $SensitivityLabelsSelection)
-					{
-						if($MassExportToCsv)
-						{
-							Write-Host "`nTotal progress : " -NoNewLine
-							Write-Host $ProgressSL"/"$TotalSL -ForeGroundColor Green
-							ExecuteExportCmdlet -TagType $tag -Workload $service -Tag $sl.name -PageSize $PageSize
-							$ProgressSL++
-						}
-						if(-Not $MassExportToCsv)
-						{
-							ExportDataToLogsAnalytics -TagType $tag -Workload $service -Tag $sl.name -PageSize $PageSize
-						}
-					}
-					
-				}
-				if($tag -eq 'SensitiveInformationType')
-				{
-					if (Test-Path "$PSScriptRoot\ConfigFiles\MPARR-SensitiveInfoTypesList.json")
-					{
-						$SITsSelected = "$PSScriptRoot\ConfigFiles\MPARR-SensitiveInfoTypesList.json"
-					
-						$jsonSIT = Get-Content -Raw -Path $SITsSelected
-						[PSCustomObject]$sitss = ConvertFrom-Json -InputObject $jsonSIT
-						$SITs = @()
-						
-						foreach ($sitd in $sitss.psobject.Properties)
-						{
-							if ($sitss."$($sitd.Name)" -eq "True")
-							{
-								$SITs += $sitd.Name
-							}
-						}
-						$SITs = @($SITs | ForEach-Object {[PSCustomObject]@{'Name' = $_}})
-					}else
-					{
-						$SITs = Get-DlpSensitiveInformationType | select Name
-					}
-					$TotalSIT = $SITs.count
-					$ProgressSIT = 1
-					
-					Write-Host "`nTotal Sensitive Information Types found:" -NoNewLine
-					Write-Host "`t"$TotalSIT -ForeGroundColor Green
-					
-					foreach($sit in $SITs)
-					{
-						if($MassExportToCsv)
-						{
-							Write-Host "`nTotal progress : " -NoNewLine
-							Write-Host $ProgressSIT"/"$TotalSIT -ForeGroundColor Green
-							ExecuteExportCmdlet -TagType $tag -Workload $service -Tag $sit.name -PageSize $PageSize
-							$ProgressSIT++
-						}
-						if(-Not $MassExportToCsv)
-						{
-							ExportDataToLogsAnalytics -TagType $tag -Workload $service -Tag $sit.name -PageSize $PageSize
-						}
-					}
-				}
-				if($tag -eq 'TrainableClassifier')
-				{
-					$TCSelected = "$PSScriptRoot\ConfigFiles\MPARR-TrainableClassifiersList.json"
-					
-					$json = Get-Content -Raw -Path $TCSelected
-					[PSCustomObject]$tcs = ConvertFrom-Json -InputObject $json
-					$TClist = @()
-					
-					foreach ($tcd in $tcs.psobject.Properties)
-					{
-						if ($tcs."$($tcd.Name)" -eq "True")
-						{
-							$TClist += $tcd.Name
-						}
-					}
-					
-					$tempFolder = $TClist
-					$TCSelection = @()
-					
-					foreach ($tcd in $tempFolder){$TCSelection += @([pscustomobject]@{Name=$tcd})}
-					
-					$TotalTC = $TCSelection.count
-					$ProgressTC = 1
-					
-					Write-Host "`nTotal Trainable Classifiers found:" -NoNewLine
-					Write-Host "`t"$TotalTC -ForeGroundColor Green
-					
-					foreach($tc in $TCSelection)
-					{
-						if($MassExportToCsv)
-						{
-						Write-Host "`nTotal progress : " -NoNewLine
-						Write-Host $ProgressTC"/"$TotalTC -ForeGroundColor Green
-						ExecuteExportCmdlet -TagType $tag -Workload $service -Tag $tc.name -PageSize $PageSize
-						$ProgressTC++
-						}
-						if(-Not $MassExportToCsv)
-						{
-							ExportDataToLogsAnalytics -TagType $tag -Workload $service -Tag $tc.name -PageSize $PageSize
-						}
-					}
-				}
+				$Counter++
 			}
 		}
 		
@@ -1463,11 +2143,30 @@ function MainFunction()
 		Someone with "Compliance Administrator" role needs to execute this script, this script is executed on-demand to refresh the SITs names
 		#>
 		
-		#Clean screen after connection
-		cls
+		UpdateMPARREntraApp
+		CheckRequiredModules
+		ValidateAdditionalConfigurationFiles
 		
-		#Global variables
-		$DefaultExport = "Logs Analytics"		
+		#Connectio to Service
+		if($SimpleExportToFile)
+		{
+			$DefaultExport = "File"
+			connect2service -ReadExport $DefaultExport
+			CheckContentExplorerPermissions
+			$TagType = ReadTagType -ReadExport $DefaultExport
+			$Workload = ReadWorkload -ReadExport $DefaultExport
+		}else
+		{
+			$DefaultExport = "Logs Analytics"
+			connect2service -ReadExport $DefaultExport
+			CheckContentExplorerPermissions
+			$TagType = ReadTagType -ReadExport $DefaultExport
+			$Workload = ReadWorkload -ReadExport $DefaultExport
+		}
+		
+		Start-Sleep -s 5
+		#Clean screen after connection
+		cls	
 		
 		#Welcome screen
 		Write-Host "`n#################################################################################" -ForeGroundColor Green
@@ -1476,26 +2175,6 @@ function MainFunction()
 		Write-Host "Remember check that you have the right permissions."
 		Write-Host "`n#################################################################################" -ForeGroundColor Green
 		Write-Host "`n"
-		
-		#Here need to be set the function to read the TagType configuration
-		if($ExportToFileOnly)
-		{
-			$DefaultExport = "File"
-			$TagType = ReadTagType -ReadExport $DefaultExport
-		}else
-		{
-			$TagType = ReadTagType -ReadExport $DefaultExport
-		}
-		
-		#Read workloads to be used with Export-ContentExplorerData
-		if($ExportToFileOnly)
-		{
-			$DefaultExport = "File"
-			$Workload = ReadWorkload -ReadExport $DefaultExport
-		}else
-		{
-			$Workload = ReadWorkload -ReadExport $DefaultExport
-		}
 		
 		#PageSize to be used
 		if($ChangePageSize)
@@ -1507,10 +2186,25 @@ function MainFunction()
 		}
 		
 		#Execute the query
-		CollectData -TagType $TagType -Workload $Workload -PageSize $Size -ReadExport $DefaultExport
+		$ExportOptionTo = "Logs Analytics"
+		$OptionEventHub = CheckExportOption
+		if($OptionEventHub -eq "True")
+		{
+			EventHubConnection
+			$ExportOptionTo = "Event Hub"
+		}
+		if($MassExportToCsv)
+		{
+			$ExportOptionTo = "MassCSVExport"
+		}
+		if($MassExportToJson)
+		{
+			$ExportOptionTo = "MassJsonExport"
+		}
+		CollectData -TagType $TagType -Workload $Workload -PageSize $Size -ReadExport $DefaultExport -ExportDataTo $ExportOptionTo
 		
 		#Check if you want to finish or request a new export
-		if($ExportToFileOnly)
+		if($SimpleExportToFile)
 		{
 			SelectContinuity
 		}else
@@ -1522,17 +2216,7 @@ function MainFunction()
 #Main Code - Run as required. Do ensure older table is deleted before creating the new table - as it will create duplicates.
 CheckPrerequisites
 
-#Connectio to Service
-if($ExportToFileOnly)
-{
-	$DefaultExport = "File"
-	connect2service -ReadExport $DefaultExport
-}else
-{
-	$DefaultExport = "Logs Analytics"
-	connect2service -ReadExport $DefaultExport
-}
-if($CreateJsonFiles)
+if($CreateConfigFiles)
 {
 	ExportToJsonFiles
 	exit
@@ -1542,4 +2226,15 @@ if($CreateTask)
 	CreateMPARRContentExplorerTask
 	exit
 }
+if($CheckDependencies)
+{
+	CheckIfElevated
+	CheckRequiredModules
+	connect2service
+	ValidateAdditionalConfigurationFiles
+	CheckContentExplorerPermissions
+	UpdateMPARREntraApp
+	exit
+}
+
 MainFunction
