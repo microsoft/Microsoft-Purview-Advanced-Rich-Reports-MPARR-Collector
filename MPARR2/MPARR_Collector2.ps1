@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 2.0.6
+.VERSION 2.0.7
 
 .GUID 883af802-165c-4700-b4c1-352686c02f01
 
@@ -133,7 +133,7 @@ Exports Microsoft 365 Audit logs data to Log Analytics or Event Hub. Optionaly d
 HISTORY
 Script      : MPARR-Collector2.ps1
 Authors     : G.Berdzik / S. Zamorano
-Version     : 2.0.6
+Version     : 2.0.7
 Purpose		: Collects Logs from Office 365 Management API and send to Logs Analytcs, Event Hub or File
 
 HISTORY
@@ -155,7 +155,8 @@ HISTORY
 	07-02-2024	S. Zamorano		- Added EventHub connector
 	12-02-2024	S. Zamorano		- New version released
 	01-03-2024	S. Zamorano		- Public release
-	03-04-2024	Marco van Doorn	- Fix related to an odd behavior with UTC time (https://www.linkedin.com/in/marco-van-doorn-a79a3a2/)
+	03-04-2024	Marco van Doorn	- Fix related to an odd behavior with UTC time
+	19-04-2024	G.Berdzik		- Get Authentication token fix
 #>
 
 #
@@ -337,27 +338,14 @@ end
 
 	function GetAuthToken
 	{
-		$CONFIGFILE = "$PSScriptRoot\ConfigFiles\laconfig.json" 
-		$json = Get-Content -Raw -Path $CONFIGFILE
-		[PSCustomObject]$config = ConvertFrom-Json -InputObject $json
-		$EncryptedKeys = $config.EncryptedKeys
-		$AppClientID = $config.AppClientID
-		$ClientSecretValue = $config.ClientSecretValue
-		$TenantDomain = $config.TenantDomain
-		$loginURL = "https://login.microsoftonline.com"
+		$loginURL = "https://login.microsoftonline.com/"
 
-		if ($EncryptedKeys -eq "True")
-		{
-			$ClientSecretValue = DecryptSharedKey $ClientSecretValue
-		}
-		
-		$body = @{grant_type="client_credentials";scope="https://graph.microsoft.com/.default";client_id=$AppClientID;client_secret=$ClientSecretValue}
+		$body = @{grant_type="client_credentials";resource=$APIResource;client_id=$AppClientID;client_secret=$ClientSecretValue}
 		Write-Host -ForegroundColor Blue -BackgroundColor white "Obtaining authentication token..." -NoNewline
 		try{
-			$oauth = Invoke-RestMethod -Method Post -Uri "$loginURL/$TenantDomain/oauth2/v2.0/token" -Body $body -ErrorAction Stop
-			$script:tokenExpiresOn = (Get-Date).AddSeconds($oauth.expires_in).ToLocalTime()
-			$script:GraphToken = "$($oauth.token_type) $($oauth.access_token)"
-			#$script:OfficeToken = @{'Authorization'="$($oauth.token_type) $($oauth.access_token)"}
+			$oauth = Invoke-RestMethod -Method Post -Uri "$loginURL/$TenantDomain/oauth2/token?api-version=1.0" -Body $body -ErrorAction Stop
+			$script:tokenExpiresOn = ([DateTime]('1970,1,1')).AddSeconds($oauth.expires_on).ToLocalTime()
+			$script:OfficeToken = @{'Authorization'="$($oauth.token_type) $($oauth.access_token)"}
 			Write-Host -ForegroundColor Green "Authentication token obtained"
 		} catch {
 			write-host -ForegroundColor Red "FAILED"
@@ -456,9 +444,8 @@ end
 		
 		<#
 		.NOTES
-		This function create both task,MPARR_Collector and MPARR-RMSData, to run every 15 minutes, that time can be changed on the same task scheduler, is not recommended less time.
+		This function create both task,MPARR_Collector, to run every 30 minutes, that time can be changed on the same task scheduler, is not recommended less time.
 		MPARR_Collector use PowerShell 7
-		MPARR-RMSData use PowerShell 5 due to API restrictions 
 		#>
 		Write-Host "`n`n----------------------------------------------------------------------------------------" -ForegroundColor Yellow
 		Write-Host "`nPlease be aware that the scripts MPARR_Collector is set to execute every 30 minutes" -ForegroundColor DarkYellow
@@ -847,7 +834,7 @@ end
 	{
 		Write-Verbose " enter export-logs" 
 		# Script variables  ---> Don't Update anything here:
-		$loginURL = "https://login.microsoftonline.com/"
+		#$loginURL = "https://login.microsoftonline.com/"
 		$BaseURI = "$APIResource/api/v1.0/$TenantGUID/activity/feed/subscriptions"
 		
 		#Folders and files needed
@@ -862,19 +849,7 @@ end
 
 		# Access token Request and Retrieval
 		GetAuthToken
-		$body = @{grant_type="client_credentials";resource=$APIResource;client_id=$AppClientID;client_secret=$ClientSecretValue}
-		Write-Host -ForegroundColor Blue -BackgroundColor white "Obtaining authentication token..." -NoNewline
-		try{
-			$oauth = Invoke-RestMethod -Method Post -Uri "$loginURL/$TenantDomain/oauth2/token?api-version=1.0" -Body $body -ErrorAction Stop
-			$OfficeToken = @{'Authorization'="$($oauth.token_type) $($oauth.access_token)"}
-			Write-Host -ForegroundColor Green "Authentication token obtained"
-		} catch {
-			write-host -ForegroundColor Red "FAILED"
-			write-host -ForegroundColor Red "Invoke-RestMethod failed."
-			Write-host -ForegroundColor Red $error[0]
-			exit
-		}
-		
+
 		#create new Subscription (if needed)
 
 		Write-Host -ForegroundColor Blue -BackgroundColor white "Creating Subscriptions...."
@@ -1130,4 +1105,3 @@ end
 	MainCollector
 #endregion
 }
-
