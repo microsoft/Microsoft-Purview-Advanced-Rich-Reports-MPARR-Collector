@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 2.0.6
+.VERSION 2.0.7
 
 .GUID 883af802-165c-4701-b4c1-352686c02f01
 
@@ -64,7 +64,7 @@ The script exports Aipservice Log Data from Microsoft AADRM API and pushes into 
 HISTORY
 Script      : MPARR-RMSData2.ps1
 Author      : S. Zamorano
-Version     : 2.0.6
+Version     : 2.0.7
 
 .NOTES (Version 2)
 	02-02-2024	S. Zamorano		- Script was re written and EventHub connector added
@@ -72,6 +72,7 @@ Version     : 2.0.6
 	14-02-2024	Berdzik\Zamorano- Added function to call support scripts using PowerShell 5
 	01-03-2024	S. Zamorano		- Public release
 	18-03-2024	S. Zamorano		- Logic to process the array associated to ContenID field is changed to process by day.
+	10-05-2024 	G.Berdzik		- Fix applied to array management for Content ID
 #> 
 
 using module "ConfigFiles\MPARRUtils.psm1"
@@ -110,10 +111,6 @@ function CheckPowerShellVersion
 
 function CheckOutputDirectory
 {
-    $CONFIGFILE = "$PSScriptRoot\ConfigFiles\laconfig.json"
-	$json = Get-Content -Raw -Path $CONFIGFILE
-	[PSCustomObject]$config = ConvertFrom-Json -InputObject $json
-	$RMSLogs = $config.RMSLogs
 	# path should not be on root drive
     if ($RMSLogs.EndsWith(":\"))
     {
@@ -176,16 +173,6 @@ function ValidateConfigurationFile
 	}else
 	{
 		#If the file is present we check if something is not correctly populated
-		$CONFIGFILE = "$PSScriptRoot\ConfigFiles\laconfig.json"
-		$json = Get-Content -Raw -Path $CONFIGFILE
-		[PSCustomObject]$config = ConvertFrom-Json -InputObject $json
-		
-		$EncryptedKeys = $config.EncryptedKeys
-		$AppClientID = $config.AppClientID
-		$WLA_CustomerID = $config.LA_CustomerID
-		$WLA_SharedKey = $config.LA_SharedKey
-		$CertificateThumb = $config.CertificateThumb
-		$OnmicrosoftTenant = $config.OnmicrosoftURL
 		
 		if($AppClientID -eq "") { Write-Host "Application Id is missing! Update the laconfig.json file and run again" -ForeGroundColor Red; exit }
 		if($WLA_CustomerID -eq "")  { Write-Host "Logs Analytics workspace ID is missing! Update the laconfig.json file and run again" -ForeGroundColor Red; exit }
@@ -225,21 +212,9 @@ function DecryptSharedKey
 
 function EventHubConnection
 {
-	$CONFIGFILE = "$PSScriptRoot\ConfigFiles\laconfig.json"
-	$json = Get-Content -Raw -Path $CONFIGFILE
-	[PSCustomObject]$config = ConvertFrom-Json -InputObject $json
-	
-	$EncryptedKeys = $config.EncryptedKeys
-	$AppClientID = $config.AppClientID
-	$ClientSecretValue = $config.ClientSecretValue
-	$TenantGUID = $config.TenantGUID
 	$EventHubNamespace = $config.EventHubNamespace
 	$EventHub = $config.EventHub
-	
-	if ($EncryptedKeys -eq "True")
-	{
-		$ClientSecretValue = DecryptSharedKey $ClientSecretValue
-	}
+
 	$script:EventHubInstance = [MPARREventHub]::new($TenantGUID, $EventHubNamespace, $EventHub, $AppClientID, $ClientSecretValue)
 	Write-Host "EventHub connection...`t" -NoNewLine
 	Write-Host "Passed!" -ForeGroundColor Green
@@ -276,7 +251,6 @@ function CreateScheduledTaskFolder
     $decision = $Host.UI.PromptForChoice("", "Default task Scheduler Folder is '$MPARRTSFolder'. Do you want to Proceed, Change the name or use Existing one?", $choices, 0)
     if ($decision -eq 1)
     {
-        $ok = $false
         do 
         {
             $newName = Read-Host "Please enter the new name for the Task Scheduler folder"
@@ -345,11 +319,6 @@ function CreateMPARRRMSDataTask
 
 function CheckExportOption
 {
-	$CONFIGFILE = "$PSScriptRoot\ConfigFiles\laconfig.json"
-	$json = Get-Content -Raw -Path $CONFIGFILE
-	[PSCustomObject]$config = ConvertFrom-Json -InputObject $json
-	$ExportOptionEventHub = $config.ExportToEventHub
-	
 	if($ExportToEventHub)
 	{
 		$ExportOptionEventHub = "True"
@@ -390,24 +359,6 @@ function Post-LogAnalyticsData($body, $LogAnalyticsTableName)
     #    Return         : None
     # ---------------------------------------------------------------
     
-	#Read configuration file
-	$CONFIGFILE = "$PSScriptRoot\ConfigFiles\laconfig.json"
-	$json = Get-Content -Raw -Path $CONFIGFILE
-	[PSCustomObject]$config = ConvertFrom-Json -InputObject $json
-	
-	$EncryptedKeys = $config.EncryptedKeys
-	$WLA_CustomerID = $config.LA_CustomerID
-	$WLA_SharedKey = $config.LA_SharedKey
-	if ($EncryptedKeys -eq "True")
-	{
-		$WLA_SharedKey = DecryptSharedKey $WLA_SharedKey
-	}
-
-	# Your Log Analytics workspace ID
-	$LogAnalyticsWorkspaceId = $WLA_CustomerID
-
-	# Use either the primary or the secondary Connected Sources client authentication key   
-	$LogAnalyticsPrimaryKey = $WLA_SharedKey 
 	
     #Step 0: sanity checks
     if($body -isnot [array]) {return}
@@ -447,10 +398,6 @@ function Post-LogAnalyticsData($body, $LogAnalyticsTableName)
 
 function ExecuteRemoteRMSScript
 {
-	$CONFIGFILE = "$PSScriptRoot\ConfigFiles\laconfig.json"
-	$json = Get-Content -Raw -Path $CONFIGFILE
-	[PSCustomObject]$config = ConvertFrom-Json -InputObject $json
-	$RMSLogs = $config.RMSLogs
 	$ContentIds = $ContentIds
 	
 	# get the newest log file and set StartTime
@@ -470,7 +417,7 @@ function ExecuteRemoteRMSScript
 		}
 	}else 
 	{
-		$StartTime = (Get-Date).AddDays(-1) 
+		$StartTime = (Get-Date).AddDays(-1)   
 	}
 
 	$timeOffset = [System.TimezoneInfo]::Local.BaseUtcOffset.TotalMinutes
@@ -535,11 +482,6 @@ function ExecuteRemoteRMSScript
 
 function ExecuteRemoteTrackingScript($ContentIds)
 {
-	$CONFIGFILE = "$PSScriptRoot\ConfigFiles\laconfig.json"
-	$json = Get-Content -Raw -Path $CONFIGFILE
-	[PSCustomObject]$config = ConvertFrom-Json -InputObject $json
-	$RMSLogs = $config.RMSLogs
-	$ExportTracking = "$RMSLogs\TrackingLogs"
 	$ContentIds = $ContentIds
 	
 	$ea = $ErrorActionPreference
@@ -597,16 +539,10 @@ function ExecuteRemoteTrackingScript($ContentIds)
 
 function TrackingRMSDetails($ContentIds)
 {
-	$CONFIGFILE = "$PSScriptRoot\ConfigFiles\laconfig.json"
-	$json = Get-Content -Raw -Path $CONFIGFILE
-	[PSCustomObject]$config = ConvertFrom-Json -InputObject $json
-	$RMSLogs = $config.RMSLogs
 	$ExportTracking = "$RMSLogs\TrackingLogs"
 	$ExportPath = $PSScriptRoot+"\ExportedData"
 	$datefile = Get-Date 
 	$datefile = $datefile.AddDays(-1).ToString("yyyy-MM-dd")
-	$ZIPDate = Get-date
-	$ZIPDate = $ZIPDate.ToString('dd-MM-yyyy_hh-mm-ss')
 	
 	if(-Not (Test-Path $ExportTracking ))
 	{
@@ -621,13 +557,12 @@ function TrackingRMSDetails($ContentIds)
 	
 	ExecuteRemoteTrackingScript -ContentIds $ContentIds
 	
-	$TrackingFiles = gci $ExportTracking -Filter *.json
+	$TrackingFiles = Get-ChildItem $ExportTracking -Filter *.json
 
 	# If there is no data, skip
 	if ($TrackingFiles.Count -eq 0) { continue; }
 
 	# Else format for Log Analytics
-	$NumberFile = 0
 	$ExportTrackingPath = $ExportPath+"\Tracking" 
 
 	foreach ($TrackingFile in $TrackingFiles)
@@ -639,7 +574,6 @@ function TrackingRMSDetails($ContentIds)
 				Write-Host "Export data directory is missing, creating a new folder called ExportedData"
 				New-Item -ItemType Directory -Force -Path $ExportTrackingPath | Out-Null
 			}
-			$ErrorFile = "MPARR - RMS Tracking Logs - Error - "+$datefile+".json"
 			
 			if($ExportToCSVFileOnly)
 			{
@@ -655,31 +589,27 @@ function TrackingRMSDetails($ContentIds)
 			}
 			Write-Host "File was copied at :" -NoNewLine
 			Write-Host $ExportTrackingPath -ForeGroundColor Green 
-		}elseif($OptionEventHub -eq "True")
+		} elseif($OptionEventHub -eq "True")
 		{
 			$data = Get-Content -Raw -Path $TrackingFile | ConvertFrom-Json
 			ExportDataAsCurrentOption -sourcedata $data -ExportOption 3
-		}else
+		} else
 		{
 			# Else format for Log Analytics
 			# Push data to Log Analytics
 			$data = Get-Content -Raw -Path $TrackingFile | ConvertFrom-Json
-			$log_analytics_array = @()            
-			foreach($i in $data) {
-				$log_analytics_array += $i
-			}
-			Post-LogAnalyticsData -LogAnalyticsTableName ($TableName + "Details") -body $log_analytics_array
+
+			Post-LogAnalyticsData -LogAnalyticsTableName ($TableName + "Details") -body $data
 		}
 
 		Write-Host "File '$TrackingFile' was processed."
 		
 		Move-Item $TrackingFile "$($TrackingFile).processed" -Force
 	}
-	$csvsummary = $ExportTracking+"\MPARR*.csv"
 	$compress = @{
 		Path = $ExportTracking+"\*.processed"
 		CompressionLevel = "Fastest"
-		DestinationPath = $ExportTracking+"\MPARR - RMS Tracking Logs - "+$ZIPDate+".zip"
+		DestinationPath = $ExportTracking+"\MPARR - RMS Tracking Logs - "+$datefile+".zip"
 	}
 	Compress-Archive @compress -Force
 	$RemoveFiles = $ExportTracking+"\*.processed"
@@ -694,11 +624,7 @@ function ExportDataAsCurrentOption([array]$sourcedata, $ExportOption, $exportnam
 	{
 		$ExportPath = $PSScriptRoot+"\ExportedData"
 		$FinalDestination = $ExportPath+"\"+$exportname
-		$log_analytics_array = @()            
-		foreach($i in $sourcedata) {
-			$log_analytics_array += $i
-		}
-		$json = $log_analytics_array | ConvertTo-Json
+		$json = $sourcedata | ConvertTo-Json
 		$json | Add-Content -Path $FinalDestination
 	}
 	if($ExportOption -eq 3)
@@ -706,32 +632,31 @@ function ExportDataAsCurrentOption([array]$sourcedata, $ExportOption, $exportnam
 		Write-Host "`nExporting to Event Hub..." -Foregroundcolor Green
 		EventHubConnection
 		$ErrorFile = "MPARR - RMS Logs - Error - "+$dateError+".json"
-		$log_analytics_array = @()            
-		foreach($i in $sourcedata) {
-			$log_analytics_array += $i
-		}
-		$EventHubInstance.PublishToEventHub($log_analytics_array, $ErrorFile)
+
+		$EventHubInstance.PublishToEventHub($sourcedata, $ErrorFile)
 	}
 	if($ExportOption -eq 4)
 	{
 		Write-Host "`nExporting to Logs Analytics..." -Foregroundcolor Green
-		$log_analytics_array = @()            
-		foreach($i in $sourcedata) {
-			$log_analytics_array += $i
-		}
 		# Push data to Log Analytics
-		Post-LogAnalyticsData -LogAnalyticsTableName $TableName -body $log_analytics_array
+		Post-LogAnalyticsData -LogAnalyticsTableName $TableName -body $sourcedata
 	}
 	if($ExportOption -eq 5)
 	{
 		Write-Host "`nExporting to Logs Analytics..." -Foregroundcolor Green
-		$log_analytics_array = @()            
-		foreach($i in $sourcedata) {
-			$log_analytics_array += $i
-		}
 		# Push data to Log Analytics
-		Post-LogAnalyticsData -LogAnalyticsTableName ($TableName+"Details") -body $log_analytics_array
+		Post-LogAnalyticsData -LogAnalyticsTableName ($TableName+"Details") -body $sourcedata
 	}
+}
+
+function FillContentIdsTable($source)
+{
+    $inputRows = $source | Where-Object {$_."content-id" -ne "-"} | Select-Object "content-id"
+    if ($inputRows.Count -gt 0)
+    {
+        $inputRows = @($inputRows."content-id" -replace "[{}]", "")
+        [void]$RMSContentID.AddRange($inputRows)
+    }
 }
 
 function Export-RMSDatav2 
@@ -742,14 +667,8 @@ function Export-RMSDatav2
     #    Return         : None
     # ---------------------------------------------------------------
 	
-	$CONFIGFILE = "$PSScriptRoot\ConfigFiles\laconfig.json"
-	$json = Get-Content -Raw -Path $CONFIGFILE
-	[PSCustomObject]$config = ConvertFrom-Json -InputObject $json
-	$RMSLogs = $config.RMSLogs
-	$Date = Get-Date -Format "yyyyMMdd"
-	$OptionEventHub = CheckExportOption
-	$ContentIds = @()
-	$RMSContentID = @()
+	#$RMSContentID = @()
+	$RMSContentID = New-Object System.Collections.ArrayList
 	$ExportPath = $PSScriptRoot+"\ExportedData"
 	$datefile = Get-Date 
 	$datefile = $datefile.AddDays(-1).ToString("yyyy-MM-dd")
@@ -761,7 +680,7 @@ function Export-RMSDatav2
 	
 	ExecuteRemoteRMSScript
 	
-	$files = gci $RMSLogs -Filter *.log
+	$files = Get-ChildItem $RMSLogs -Filter *.log
 
 	# If there is no data, skip
 	if ($files.Count -eq 0) { continue; }
@@ -771,14 +690,11 @@ function Export-RMSDatav2
 	Start-Sleep -s 2
 
 	# Else format for Log Analytics
-	$NumberFile = 0
 	$loopNumber = 0
-	$ContentIDData = New-Object PSObject
+	#$ContentIDData = New-Object PSObject
 	foreach ($file in $files)
 	{
 		$csv = New-Object System.Collections.ArrayList
-		$GetLogs = @()
-		$JsonData = @{}
 		$GetLogs = Get-Content -Path $file -TotalCount 4
 		$csvHeader = ($GetLogs | Select-String "^#Fields:").ToString().Replace("#Fields: ", "")
         [void]$csv.Add($csvHeader)
@@ -800,18 +716,8 @@ function Export-RMSDatav2
 				Start-Sleep -s 1
 				$ContentSize = 0
 				$data = $csv | ConvertFrom-Csv -Delimiter "`t"
-				foreach($i in $data)
-				{
-					$ContentIDValue = ""
-					if($i."content-id" -ne "-")
-					{
-						$ContentIDValue = $i."content-id" -replace "[{}]", ""
-						$ContentIDData = [PSCustomObject]@{
-							TrackingID = $ContentIDValue
-						}
-					}
-					$RMSContentID += $ContentIDData
-				}
+				FillContentIdsTable $data
+
 				if($ExportToCSVFileOnly)
 				{
 					continue
@@ -827,6 +733,7 @@ function Export-RMSDatav2
 					ExportDataAsCurrentOption -sourcedata $data -ExportOption 4
 				}
 				$loopNumber++
+				$csv.Clear()
 				$csv = New-Object System.Collections.ArrayList
 				[void]$csv.Add($csvHeader)
 
@@ -834,18 +741,7 @@ function Export-RMSDatav2
 		}
 		$srFile.Close()
 		$data = $csv | ConvertFrom-Csv -Delimiter "`t"
-		foreach($i in $data)
-		{
-			$ContentIDValue = ""
-			if($i."content-id" -ne "-")
-			{
-				$ContentIDValue = $i."content-id" -replace "[{}]", ""
-				$ContentIDData = [PSCustomObject]@{
-					TrackingID = $ContentIDValue
-				}
-			}
-			$RMSContentID += $ContentIDData
-		}
+		FillContentIdsTable $data
 		
 		if($ExportToCSVFileOnly)
 		{
@@ -867,18 +763,6 @@ function Export-RMSDatav2
 		$loopNumber++
 		Write-Host "File '$file' was processed with $($csv.count - 1) records."
 		Move-Item $file "$($file).processed" -Force
-		
-		#Start processing Content ID array per file
-		$RMSArrayID = @()
-		foreach($id in $RMSContentID)
-		{
-			$RMSArrayID += $id.TrackingID
-		}
-		$RMSArrayID = $RMSArrayID | select -Unique
-
-		TrackingRMSDetails -ContentIds $RMSArrayID
-		$ContentIds = @()
-		
 	}
 	$compress = @{
 		Path = $RMSLogs+"*.processed"
@@ -888,20 +772,44 @@ function Export-RMSDatav2
 	Compress-Archive @compress -Force
 	$RemoveFiles = $RMSLogs+"*.processed"
 	Remove-Item -Path $RemoveFiles -Force
-	
-	<#
-	$RMSArrayID = @()
-	foreach($id in $RMSContentID)
-	{
-		$RMSArrayID += $id.TrackingID
-	}
-	$RMSArrayID = $RMSArrayID | select -Unique
 
-	TrackingRMSDetails -ContentIds $RMSArrayID
-	#>
+	$RMSContentID = $RMSContentID | Select-Object -Unique
+	TrackingRMSDetails -ContentIds $RMSContentID
 }
 
 #Run the script.
+
+# Script settings
+$CONFIGFILE = "$PSScriptRoot\ConfigFiles\laconfig.json"
+$json = Get-Content -Raw -Path $CONFIGFILE
+[PSCustomObject]$config = ConvertFrom-Json -InputObject $json
+$RMSLogs = $config.RMSLogs
+$EncryptedKeys = $config.EncryptedKeys
+$AppClientID = $config.AppClientID
+$WLA_CustomerID = $config.LA_CustomerID
+$WLA_SharedKey = $config.LA_SharedKey
+$CertificateThumb = $config.CertificateThumb
+$OnmicrosoftTenant = $config.OnmicrosoftURL
+$ExportOptionEventHub = $config.ExportToEventHub
+$ClientSecretValue = $config.ClientSecretValue
+$TenantGUID = $config.TenantGUID
+
+if ($EncryptedKeys -eq "True")
+{
+	$WLA_SharedKey = DecryptSharedKey $WLA_SharedKey
+	$ClientSecretValue = DecryptSharedKey $ClientSecretValue
+}
+
+# Your Log Analytics workspace ID
+$LogAnalyticsWorkspaceId = $WLA_CustomerID
+
+# Use either the primary or the secondary Connected Sources client authentication key   
+$LogAnalyticsPrimaryKey = $WLA_SharedKey 
+
+$OptionEventHub = CheckExportOption
+
+ValidateConfigurationFile
+
 CheckPrerequisites
 if($CreateTask)
 {
@@ -909,4 +817,3 @@ if($CreateTask)
 	exit
 }
 Export-RMSDatav2
-
