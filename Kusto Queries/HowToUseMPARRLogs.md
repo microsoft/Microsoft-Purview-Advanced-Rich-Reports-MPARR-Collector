@@ -93,7 +93,43 @@ AuditGeneral_CL
 ![image](https://github.com/user-attachments/assets/551906a9-bb69-436e-b614-00b39dcaafc7)
 
 > [!IMPORTANT]
-> We can see that the filter **contains** is underlined with a red line, this is because KQL is case sensitive, use **contains** instead of **==** is more expensive, nevertheless, permit to identify the workload that can be write in lowercaser.
+> We can see that the filter 'contains' is underlined with a red line. This is because KQL is case-sensitive. Using **'contains'** instead of **'=='** is more resource-intensive, but it allows for the identification of workloads that can be written in lowercase, uppercase or a mix. Nevertheless, if you are clear that the workload appears wrote in only one way, you can use **==**.
 
- 
+The next step is to obtain detailed information about a specific activity. Similarly, we can gather information about a specific workload, but this will include details on all the operations associated with that workload.
 
+```KQL
+AuditGeneral_CL
+| where TimeGenerated >= now(-730d)
+| where Operation_s contains "ChannelAdded"
+```
+> In the previous steps, we identified workloads and operations. In the last query, we obtained a list of Microsoft Teams operations, and now we are focusing on a specific operation called **'ChannelAdded'**. Based on my experience, operations with the same name are rarely found across different workloads, except for specific cases like **'DLPRuleMatch'** or **'SensitivityLabelApplied'**. Therefore, I did not include the workload filter in the query, but it can be added if needed.
+
+![image](https://github.com/user-attachments/assets/412d5dc9-b99f-4fc9-b54c-76ffcc8319f3)
+
+> [!TIP]
+> Another field that comes into play is **'UserId_s'**, which can be used to identify activities or workloads associated with specific users or to narrow down the results to certain users.
+
+```KQL
+AuditGeneral_CL
+| where TimeGenerated >= now(-730d)
+| where Operation_s contains "ChannelAdded"
+| where UserId_s contains "sebastian"
+```
+![image](https://github.com/user-attachments/assets/0bee0763-12c1-4813-9ce3-236978d4f0e8)
+
+All this exercise permit to identify all the fields related to each activity, additionally, to the workload, operation and user.
+
+### And then...
+
+We can start to play with the different fields available on each operation or we can get all the activities per User.
+```KQL
+AuditGeneral_CL
+| where TimeGenerated >= now(-730d)
+| where UserId_s contains "mike"
+| summarize count() by Workload_s, Operation_s
+| order by Workload_s asc
+```
+
+> This previous query returns all activities per workload for the user named **'mike'**. In this environment, we have only one user named **Mike Wazowski**. The following image shows all activities related to Purview for this user in an administrator role.
+
+![image](https://github.com/user-attachments/assets/ec978d81-9bef-4642-a727-747f36819fc8)
