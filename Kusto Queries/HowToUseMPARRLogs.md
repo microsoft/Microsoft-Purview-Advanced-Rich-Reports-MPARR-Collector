@@ -42,10 +42,58 @@ This KQL returns all the Workloads currently available in our Logs, the operatio
 ![image](https://github.com/user-attachments/assets/0dbfe3c1-fd22-466d-b7b7-23285576fe8c)
 
 Now, if you want to get a list of only operations or workloads we can execute in these ways:
-`Only Workloads' 
+> `Only Workloads`
+
 ```KQL
 AuditGeneral_CL
 | where TimeGenerated >= now(-730d)
-| summarize count() by Workload_s, Operation_s
+| summarize count() by Workload_s
 | order by Workload_s asc
 ```
+
+> `Only Operations`
+
+```KQL
+AuditGeneral_CL
+| where TimeGenerated >= now(-730d)
+| summarize count() by Operation_s
+| order by Operation_s asc
+```
+
+> `Only Workloads` Sample results
+
+![image](https://github.com/user-attachments/assets/51bbd822-f803-46ac-84bd-b011b20f9286)
+
+> `Only Operations` Sample results
+
+![image](https://github.com/user-attachments/assets/b5ff309f-9089-4ad6-9059-a7544f8893f9)
+
+> [!TIP]
+> We can extend this exercise to all the tables in this way:
+> ```KQL
+> [Table Name]
+> | where TimeGenerated >= now(-730d)
+> | summarize count() by Workload_s, Operation_s
+> | order by Workload_s asc
+> ```
+
+### Now we can go more in deep
+
+Getting the list of workloads we can filter using this information, in this way:
+
+```KQL
+AuditGeneral_CL
+| where TimeGenerated >= now(-730d)
+| where Workload_s contains "MicrosoftTeams"
+| summarize count() by Operation_s
+| order by Operation_s asc
+```
+> Here we are collecting all the operations related to Microsoft Teams, at least all the activities that was occuring on my environment.
+
+![image](https://github.com/user-attachments/assets/551906a9-bb69-436e-b614-00b39dcaafc7)
+
+> [!IMPORTANT]
+> We can see that the filter **contains** is underlined with a red line, this is because KQL is case sensitive, use **contains** instead of **==** is more expensive, nevertheless, permit to identify the workload that can be write in lowercaser.
+
+ 
+
