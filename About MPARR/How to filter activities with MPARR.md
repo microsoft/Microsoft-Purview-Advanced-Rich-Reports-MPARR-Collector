@@ -57,4 +57,4 @@ In the previous execution we are getting all the activities from Exchange, Share
 
 Nevertheless, execute PowerShell scripts using attributes through Task Scheduler can generate some odd behaviors, for that same reason the best alternative is use a new script called "[MPARR2_run_me.ps1](https://github.com/microsoft/Microsoft-Purview-Advanced-Rich-Reports-MPARR-Collector/blob/main/MPARR2/MPARR2_run_me.ps1)" that call "MPARR_Collector2.ps1" adding the attributes related to the filtering capabilities. And replacing under task scheduler the call to the main script for the MPARR2_run_me one. 
 
-![image-20240730092936375](./../../../../../AppData/Roaming/Typora/typora-user-images/image-20240730092936375.png)
+![image](https://github.com/user-attachments/assets/0b3d50db-04be-4c22-8931-3f7c1c464487)
