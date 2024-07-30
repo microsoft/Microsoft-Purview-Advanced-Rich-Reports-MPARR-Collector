@@ -26,7 +26,7 @@ RMSData_CL
     Year = datetime_part('Year',TimeGenerated), 
     Month = datetime_part('Month',TimeGenerated),
     Day = datetime_part('Day',TimeGenerated)
-``` 
+```
 
 ### MPARR-Collector.ps1 (Office 365 Management API)
 Exist some documentation about some limits on Power BI when we try to download certain number of information using a query, with these queries we can obtain the dates where we can found activities in each table, tha dates are separated in Year, Month and Day, after that we can use other queries as a functions and, finally, generate a query per day increasing the number of results, a kind of way to skip the limit.
