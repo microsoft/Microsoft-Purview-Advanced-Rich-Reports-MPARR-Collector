@@ -657,7 +657,7 @@ function connect2MicrosoftGraph
 	{
 		Write-Host "`nAuthentication is required, please check your browser" -ForegroundColor Green
 		Import-Module Microsoft.Graph.Sites
-		Connect-MgGraph
+		Connect-MgGraph -NoWelcome
 	}else
 	{
 		$CONFIGFILE = "$PSScriptRoot\ConfigFiles\laconfig.json"
