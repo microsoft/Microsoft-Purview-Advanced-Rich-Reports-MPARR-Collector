@@ -1,0 +1,257 @@
+<#PSScriptInfo
+
+.VERSION 2.1.0
+
+.GUID 883af802-165c-4700-b4c1-352686c02f01
+
+.AUTHOR 
+https://www.linkedin.com/in/john-louden-82b7ab3/; JohnLouden
+
+.COMPANYNAME 
+Microsoft Purview Advanced Rich Reports
+
+.TAGS 
+#Microsoft365 #M365 #MPARR #MicrosoftPurview #PowerBI #LogsAnalytics #Sentinel #Reporting #Dashboards #InformationProtection #MIP #Labels #DLP
+#Webinar #PowerBI #DataAnalisys #Data #DataInsights #API #Office365ManagementAPI #YouTube #DataExfiltration
+
+.PROJECTURI 
+https://aka.ms/MPARR-GitHub; https://aka.ms/MPARR-LinkedIn; https://aka.ms/MPARR-YouTube 
+
+.RELEASENOTES
+The MIT License (MIT)
+Copyright (c) 2015 Microsoft Corporation
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+#>
+
+<# 
+
+.DESCRIPTION 
+Creates a WinForms GUI for editing multiple SIT configuration files in a specific directory.
+
+#>
+
+# --- Configuration ---
+$ConfigFolderPath = "C:\MPARR2 Collector\ConfigFiles"
+
+# --- Load Windows Forms Assemblies ---
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+
+function Show-SITEditor {
+    # 1. VALIDATE FOLDER
+    if (-not (Test-Path $ConfigFolderPath)) {
+        [System.Windows.Forms.MessageBox]::Show("Config folder not found at:`n$ConfigFolderPath", "Error", "OK", "Error")
+        return
+    }
+
+    # 2. SETUP GUI FORM
+    $Form = New-Object System.Windows.Forms.Form
+    $Form.Text = "SIT Configuration Manager"
+    $Form.Size = New-Object System.Drawing.Size(650, 750)
+    $Form.StartPosition = "CenterScreen"
+    $Form.BackColor = [System.Drawing.Color]::WhiteSmoke
+
+    # --- CONTROLS ---
+
+    # Label: Select File
+    $LblFile = New-Object System.Windows.Forms.Label
+    $LblFile.Text = "Select Config File:"
+    $LblFile.Location = New-Object System.Drawing.Point(10, 15)
+    $LblFile.AutoSize = $true
+    $LblFile.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+    $Form.Controls.Add($LblFile)
+
+    # ComboBox: File Selector
+    $ComboFiles = New-Object System.Windows.Forms.ComboBox
+    $ComboFiles.Location = New-Object System.Drawing.Point(130, 12)
+    $ComboFiles.Width = 490
+    $ComboFiles.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
+    $Form.Controls.Add($ComboFiles)
+
+    # Label: Search
+    $LblSearch = New-Object System.Windows.Forms.Label
+    $LblSearch.Text = "Filter Items:"
+    $LblSearch.Location = New-Object System.Drawing.Point(10, 50)
+    $LblSearch.AutoSize = $true
+    $Form.Controls.Add($LblSearch)
+
+    # TextBox: Search
+    $TxtSearch = New-Object System.Windows.Forms.TextBox
+    $TxtSearch.Location = New-Object System.Drawing.Point(130, 47)
+    $TxtSearch.Width = 490
+    $Form.Controls.Add($TxtSearch)
+
+    # Data Grid View (The Table)
+    $Grid = New-Object System.Windows.Forms.DataGridView
+    $Grid.Location = New-Object System.Drawing.Point(10, 85)
+    $Grid.Size = New-Object System.Drawing.Size(610, 560)
+    $Grid.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
+    $Grid.AllowUserToAddRows = $false
+    $Grid.AllowUserToDeleteRows = $false
+    $Grid.RowHeadersVisible = $false
+    $Grid.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::Fill
+    $Grid.BackgroundColor = [System.Drawing.Color]::White
+
+    # Columns
+    $ColName = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+    $ColName.Name = "ConfigKey"
+    $ColName.HeaderText = "Configuration Key"
+    $ColName.ReadOnly = $true
+    $Grid.Columns.Add($ColName) | Out-Null
+
+    $ColCheck = New-Object System.Windows.Forms.DataGridViewCheckBoxColumn
+    $ColCheck.Name = "Enabled"
+    $ColCheck.HeaderText = "Value (True/False)"
+    $ColCheck.Width = 120
+    $Grid.Columns.Add($ColCheck) | Out-Null
+
+    $Form.Controls.Add($Grid)
+
+    # Save Button
+    $BtnSave = New-Object System.Windows.Forms.Button
+    $BtnSave.Text = "Save Changes to File"
+    $BtnSave.Location = New-Object System.Drawing.Point(10, 660)
+    $BtnSave.Size = New-Object System.Drawing.Size(610, 40)
+    $BtnSave.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
+    $BtnSave.BackColor = [System.Drawing.Color]::DodgerBlue
+    $BtnSave.ForeColor = [System.Drawing.Color]::White
+    $BtnSave.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+    $BtnSave.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+    $Form.Controls.Add($BtnSave)
+
+    # --- LOGIC & DATA STATE ---
+    
+    # Global state for current file data
+    $Script:CurrentJsonData = $null
+    $Script:CurrentFilePath = $null
+
+    # Helper: Load Files into ComboBox
+    function Load-FileList {
+        $Files = Get-ChildItem -Path $ConfigFolderPath -Filter "*.json"
+        $ComboFiles.Items.Clear()
+        foreach ($File in $Files) {
+            $ComboFiles.Items.Add($File.Name) | Out-Null
+        }
+
+        if ($ComboFiles.Items.Count -gt 0) {
+            $ComboFiles.SelectedIndex = 0
+        } else {
+            [System.Windows.Forms.MessageBox]::Show("No JSON files found in $ConfigFolderPath", "Warning", "OK", "Warning")
+        }
+    }
+
+    # Helper: Populate Grid from Selected File
+    function Load-GridData {
+        param($FileName)
+
+        $Grid.Rows.Clear()
+        $Script:CurrentFilePath = Join-Path $ConfigFolderPath $FileName
+        
+        try {
+            $JsonContent = Get-Content $Script:CurrentFilePath -Raw
+            # Use Ordered Dictionary to keep sanity if possible, but JSON objects are unordered by default
+            $Script:CurrentJsonData = $JsonContent | ConvertFrom-Json
+            
+            # Sort keys for display
+            $SortedKeys = $Script:CurrentJsonData.PSObject.Properties.Name | Sort-Object
+
+            foreach ($Key in $SortedKeys) {
+                $RowIndex = $Grid.Rows.Add()
+                $Grid.Rows[$RowIndex].Cells["ConfigKey"].Value = $Key
+                
+                # Logic: If value is "True" -> Checked. Otherwise Unchecked.
+                $Val = $Script:CurrentJsonData.$Key
+                if ($Val -eq "True") { 
+                    $Grid.Rows[$RowIndex].Cells["Enabled"].Value = $true 
+                } else { 
+                    $Grid.Rows[$RowIndex].Cells["Enabled"].Value = $false 
+                }
+            }
+        }
+        catch {
+            [System.Windows.Forms.MessageBox]::Show("Failed to read file: $FileName `nError: $($_.Exception.Message)", "Read Error", "OK", "Error")
+        }
+    }
+
+    # --- EVENT HANDLERS ---
+
+    # 1. File Selection Change
+    $ComboFiles.Add_SelectedIndexChanged({
+        if ($ComboFiles.SelectedItem) {
+            Load-GridData -FileName $ComboFiles.SelectedItem
+            $TxtSearch.Text = "" # Clear search on file change
+        }
+    })
+
+    # 2. Search Filtering
+    $TxtSearch.Add_TextChanged({
+        $Filter = $TxtSearch.Text.ToLower()
+        foreach ($Row in $Grid.Rows) {
+            if ($Row.IsNewRow) { continue }
+            $Name = $Row.Cells["ConfigKey"].Value.ToString().ToLower()
+            if ($Name.Contains($Filter)) {
+                $Row.Visible = $true
+            } else {
+                # WinForms quirk: Must clear current cell before hiding row
+                if ($Grid.CurrentCell -and $Grid.CurrentCell.RowIndex -eq $Row.Index) {
+                    $Grid.CurrentCell = $null
+                }
+                $Row.Visible = $false
+            }
+        }
+    })
+
+    # 3. Save Button
+    $BtnSave.Add_Click({
+        if (-not $Script:CurrentJsonData) { return }
+
+        try {
+            # Update the in-memory object from the Grid
+            foreach ($Row in $Grid.Rows) {
+                $Key = $Row.Cells["ConfigKey"].Value
+                $IsChecked = $Row.Cells["Enabled"].Value
+                
+                # Convert back to string "True"/"False"
+                $StringVal = if ($IsChecked) { "True" } else { "False" }
+                
+                # Update property
+                $Script:CurrentJsonData.$Key = $StringVal
+            }
+
+            # Write to disk
+            $NewContent = $Script:CurrentJsonData | ConvertTo-Json -Depth 10 -Compress:$false
+            $NewContent | Set-Content $Script:CurrentFilePath -Encoding UTF8
+
+            [System.Windows.Forms.MessageBox]::Show("Saved successfully to:`n$Script:CurrentFilePath", "Success", "OK", "Information")
+        }
+        catch {
+            [System.Windows.Forms.MessageBox]::Show("Failed to save file:`n$($_.Exception.Message)", "Save Error", "OK", "Error")
+        }
+    })
+
+    # --- INITIALIZATION ---
+    Load-FileList
+    
+    # Show Form
+    $Form.Add_Shown({ $Form.Activate() })
+    $Form.ShowDialog() | Out-Null
+    $Form.Dispose()
+}
+
+# Run the GUI
+Show-SITEditor
