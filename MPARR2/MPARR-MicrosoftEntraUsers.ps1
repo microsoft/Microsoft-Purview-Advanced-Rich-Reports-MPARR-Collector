@@ -103,28 +103,27 @@ function CheckPowerShellVersion
 
 function CheckCertificateInstalled($thumbprint)
 {
-	$var = "False"
-	$certificates = @(Get-ChildItem Cert:\CurrentUser\My | Where-Object {$_.EnhancedKeyUsageList -like "*Client Authentication*"}| Select-Object Thumbprint) 
-	#$thumbprint -in $certificates
-	foreach($certificate in $certificates)
-	{
-		if($thumbprint -in $certificate.Thumbprint)
-		{
-			$var = "True"
-		}
-	 }
-	 if($var -eq "True")
-	 {
-		Write-Host "Certificate validation..." -NoNewLine
-		Write-Host "`t`t`t`tPassed!" -ForegroundColor Green
-		return $var
-	 }else
-	 {
-		Write-Host "`nCertificate installed on this machine is missing!!!" -ForeGroundColor Yellow
-		Write-Host "To execute this script unattended a certificate needs to be installed, the same used under Microsoft Entra App"
-		Start-Sleep -s 1
-		return $var
-	 }
+    $var = "False"
+    
+    $cert = Get-Item -Path "Cert:\LocalMachine\My\$thumbprint" -ErrorAction SilentlyContinue
+    if (-not $cert) {
+        $cert = Get-Item -Path "Cert:\CurrentUser\My\$thumbprint" -ErrorAction SilentlyContinue
+    }
+
+    if ($cert)
+    {
+        Write-Host "Certificate validation..." -NoNewLine
+        Write-Host "`t`t`t`tPassed!" -ForegroundColor Green
+        $var = "True"
+    }
+    else
+    {
+        Write-Host "`nCertificate installed on this machine is missing or inaccessible!!!" -ForeGroundColor Yellow
+        Write-Host "To execute this script unattended, a certificate matching the Microsoft Entra App must be installed in either the LocalMachine\My or CurrentUser\My store."
+        Start-Sleep -s 1
+    }
+    
+    return $var
 }
 
 function ValidateConfigurationFile
