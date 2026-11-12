@@ -604,7 +604,7 @@ end
 				$NextContentPageURI = $ThisContentPage.Headers.NextPageUri
 				if ($NextContentPageURI -is [array])
 				{
-					$NextContentPageURI = $Log.Headers.NextPageUri[0]
+					$NextContentPageURI = $ThisContentPage.Headers.NextPageUri[0]
 				}
 				if ($oldURI -eq $NextContentPageURI)
 				{
