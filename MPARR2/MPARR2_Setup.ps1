@@ -2250,6 +2250,7 @@ function SubMenuMicrosoftPurviewAPIScripts
         "1" {CreateMPARRPurviewLabelsTask; break}
 		"2" {CreateMPARRPurviewSITsTask; break}
 		"3" {CreateMPARRPurviewRolesTask; break}
+		"4" {& "$PSScriptRoot\MPARR-ContentExplorerData2.ps1" -CreateTask; break}
 		"0" {cls;return}
 		}
 	
